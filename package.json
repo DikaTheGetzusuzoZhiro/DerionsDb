@@ -1,7 +1,7 @@
 {
-  "name": "advanced-security-scanner",
+  "name": "toxic-scanner-bot",
   "version": "1.0.0",
-  "description": "Discord File Security Scanner",
+  "description": "Discord Scanner + Toxic AI Bot (Groq)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
