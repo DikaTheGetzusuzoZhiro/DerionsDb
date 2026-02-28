@@ -5,7 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const Unrar = require("node-unrar-js");
-const Seven = require("7zip-min");
+const Seven = require("node-7z");
+const sevenBin = require("7zip-bin");
 
 const client = new Client({
   intents: [
@@ -109,10 +110,9 @@ async function readFileContent(filePath, ext) {
     fs.mkdirSync(tempDir);
 
     await new Promise((resolve, reject) => {
-      Seven.extractFull(filePath, tempDir, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+      const stream = Seven.extractFull(filePath, tempDir, { $bin: sevenBin.path7za });
+      stream.on("end", () => resolve());
+      stream.on("error", (err) => reject(err));
     });
 
     const walk = (dir) => {
