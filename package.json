@@ -1,7 +1,6 @@
 {
   "name": "toxic-scanner-bot",
-  "version": "1.0.0",
-  "description": "Discord Scanner + Toxic AI Bot (Groq)",
+  "version": "2.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
