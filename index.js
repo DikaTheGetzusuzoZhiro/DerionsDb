@@ -14,13 +14,14 @@ const client = new Client({
     ]
 });
 
-// 🔒 CHANNEL YANG DIIZINKAN
+// =======================
+// 🔒 SCANNER CONFIG
+// =======================
+
 const allowedChannelId = "1477131305765572618";
 
-// 🔒 EXTENSION DIIZINKAN
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
-// ⚠️ POLA MENCURIGAKAN (50%)
 const suspiciousPatterns = [
     "LuaObfuscator",
     "loadstring",
@@ -31,21 +32,98 @@ const suspiciousPatterns = [
     "telegram.org/bot"
 ];
 
-// 🚨 WEBHOOK BERBAHAYA (99%)
 const dangerousPatterns = [
     "discord.com/api/webhooks/",
     "discordapp.com/api/webhooks/",
     "api.telegram.org/bot"
 ];
 
+// =======================
+// 🤖 GROQ AI CONFIG
+// =======================
+
+function detectTypo(text) {
+    return /(.)\1{4,}/i.test(text);
+}
+
+async function generateRoast(input) {
+    const response = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+            model: "llama3-70b-8192",
+            messages: [
+                {
+                    role: "system",
+                    content: `
+Kamu AI toxic brutal, sarkas, meremehkan, gaya gamer nyolot.
+Jawaban panjang dan kreatif.
+Tanpa ujaran kebencian ras/agama atau ancaman kekerasan.
+`
+                },
+                {
+                    role: "user",
+                    content: input
+                }
+            ],
+            temperature: 1.2
+        },
+        {
+            headers: {
+                Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+                "Content-Type": "application/json"
+            }
+        }
+    );
+
+    return response.data.choices[0].message.content;
+}
+
 client.once("ready", () => {
-    console.log(`✅ Bot aktif sebagai ${client.user.tag}`);
+    console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
 });
 
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
-    // 🚫 JIKA BUKAN CHANNEL YANG DIIZINKAN
+    const content = message.content;
+
+    try {
+
+        // =======================
+        // 🤖 COMMAND !ai
+        // =======================
+        if (content.startsWith("!ai")) {
+            const userInput = content.slice(3).trim();
+            if (!userInput) return message.reply("Ngetik aja setengah-setengah.");
+
+            const roast = await generateRoast(userInput);
+            return message.reply(roast);
+        }
+
+        // =======================
+        // 🔥 AUTO TYPO ATTACK
+        // =======================
+        if (detectTypo(content)) {
+            const roast = await generateRoast("User typo parah: " + content);
+            return message.reply(roast);
+        }
+
+        // =======================
+        // 🔥 AUTO ROAST RANDOM 30%
+        // =======================
+        if (Math.random() < 0.3) {
+            const roast = await generateRoast(content);
+            message.reply(roast);
+        }
+
+    } catch (err) {
+        console.error(err.response?.data || err.message);
+    }
+
+    // =======================
+    // 🛡️ SCANNER SYSTEM
+    // =======================
+
     if (message.channel.id !== allowedChannelId) {
 
         if (message.attachments.size > 0) {
@@ -69,7 +147,6 @@ client.on("messageCreate", async (message) => {
     const attachment = message.attachments.first();
     const fileName = attachment.name.toLowerCase();
 
-    // 🔒 CEK FORMAT FILE
     const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
 
     if (!isAllowed) {
@@ -85,15 +162,14 @@ client.on("messageCreate", async (message) => {
 
     try {
         const response = await axios.get(attachment.url, { responseType: "arraybuffer" });
-        const content = Buffer.from(response.data).toString("utf8");
+        const contentFile = Buffer.from(response.data).toString("utf8");
 
         let riskPercent = 0;
         let status = "🟢 Aman";
         let color = 0x00ff00;
         let detailText = "Tidak ditemukan pola mencurigakan";
 
-        // 🚨 PRIORITAS WEBHOOK
-        const foundDanger = dangerousPatterns.find(pattern => content.includes(pattern));
+        const foundDanger = dangerousPatterns.find(pattern => contentFile.includes(pattern));
 
         if (foundDanger) {
             riskPercent = 99;
@@ -101,7 +177,7 @@ client.on("messageCreate", async (message) => {
             color = 0xff0000;
             detailText = `Terdeteksi webhook berbahaya:\n• ${foundDanger}`;
         } else {
-            const foundSuspicious = suspiciousPatterns.filter(pattern => content.includes(pattern));
+            const foundSuspicious = suspiciousPatterns.filter(pattern => contentFile.includes(pattern));
 
             if (foundSuspicious.length > 0) {
                 riskPercent = 50;
@@ -134,5 +210,4 @@ client.on("messageCreate", async (message) => {
     }
 });
 
-// 🔑 LOGIN
 client.login(process.env.TOKEN_DISCORD);
