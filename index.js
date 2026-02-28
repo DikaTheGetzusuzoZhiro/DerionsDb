@@ -14,20 +14,25 @@ const client = new Client({
     ]
 });
 
-// 🔒 EXTENSION DIIZINKAN
+// ✅ EXTENSION YANG DIIZINKAN
 const allowedExtensions = [".lua", ".txt", ".zip"];
 
-// 🔍 POLA MENCURIGAKAN
+// ⚠️ POLA MENCURIGAKAN BIASA (50%)
 const suspiciousPatterns = [
-    "api.telegram.org",
-    "telegram.org/bot",
-    "username",
-    "password",
     "LuaObfuscator",
     "loadstring",
     "require('socket')",
-    "http://",
-    "https://"
+    "username",
+    "password",
+    "api.telegram.org",
+    "telegram.org/bot"
+];
+
+// 🚨 WEBHOOK BERBAHAYA (99%)
+const dangerousPatterns = [
+    "discord.com/api/webhooks/",
+    "discordapp.com/api/webhooks/",
+    "api.telegram.org/bot"
 ];
 
 client.once("ready", () => {
@@ -41,7 +46,7 @@ client.on("messageCreate", async (message) => {
     const attachment = message.attachments.first();
     const fileName = attachment.name.toLowerCase();
 
-    // 🚫 CEK FORMAT FILE
+    // 🔒 CEK FORMAT FILE
     const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
 
     if (!isAllowed) {
@@ -59,30 +64,30 @@ client.on("messageCreate", async (message) => {
         const response = await axios.get(attachment.url);
         const content = response.data.toString();
 
-        let detected = [];
-
-        suspiciousPatterns.forEach(pattern => {
-            if (content.includes(pattern)) {
-                detected.push(pattern);
-            }
-        });
-
-        // 📊 HITUNG RISIKO
-        let riskPercent = Math.min(detected.length * 15, 100);
+        let riskPercent = 0;
         let status = "🟢 Aman";
         let color = 0x00ff00;
         let detailText = "Tidak ditemukan pola mencurigakan";
 
-        if (riskPercent >= 60) {
-            status = "🔴 Bahaya Tinggi";
-            color = 0xff0000;
-        } else if (riskPercent >= 30) {
-            status = "🟡 Mencurigakan";
-            color = 0xffcc00;
-        }
+        // 🚨 CEK WEBHOOK (PRIORITAS TERTINGGI)
+        const foundDanger = dangerousPatterns.find(pattern => content.includes(pattern));
 
-        if (detected.length > 0) {
-            detailText = detected.map(d => `• ${d}`).join("\n");
+        if (foundDanger) {
+            riskPercent = 99;
+            status = "🔴 Bahaya";
+            color = 0xff0000;
+            detailText = `Terdeteksi webhook berbahaya:\n• ${foundDanger}`;
+        } else {
+
+            // ⚠️ CEK POLA MENCURIGAKAN
+            const foundSuspicious = suspiciousPatterns.filter(pattern => content.includes(pattern));
+
+            if (foundSuspicious.length > 0) {
+                riskPercent = 50;
+                status = "🟡 Mencurigakan";
+                color = 0xffcc00;
+                detailText = foundSuspicious.map(p => `• ${p}`).join("\n");
+            }
         }
 
         const embed = new EmbedBuilder()
@@ -108,5 +113,5 @@ client.on("messageCreate", async (message) => {
     }
 });
 
-// 🔑 LOGIN BOT
+// 🔑 LOGIN
 client.login(process.env.TOKEN_DISCORD);
