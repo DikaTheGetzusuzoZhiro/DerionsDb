@@ -18,33 +18,9 @@ const API_KEY = process.env.API_KEY;
 const SCAN_CHANNEL = "1469740150522380299";
 const AI_CHANNEL = "1475164217115021475";
 
-/* =========================
-   PATTERN DETEKSI
-========================= */
-
-const dangerPatterns = [
-  "discord.com/api/webhooks",
-  "discordapp.com/api/webhooks",
-  "api.telegram.org",
-  "t.me/",
-];
-
-const suspiciousPatterns = [
-  "http.request",
-  "socket.connect",
-  "loadstring",
-  "os.execute",
-  "PerformHttpRequest",
-  "SetClipboard",
-  "token",
-  "getfenv",
-  "setfenv"
-];
-
-/* =========================
+/* ===============================
    AI FUNCTION
-========================= */
-
+================================ */
 async function askAI(text) {
   try {
     const response = await axios.post(
@@ -60,42 +36,96 @@ async function askAI(text) {
       }
     );
 
-    return response.data.response || "AI lagi error 😈";
-  } catch (err) {
-    console.log("AI ERROR:", err.message);
+    return response.data.response || "AI error 😈";
+  } catch {
     return "AI lagi tumbang 😭";
   }
 }
 
-/* =========================
-   ANALISIS FILE
-========================= */
+/* ===============================
+   BERSIHKAN KOMENTAR LUA
+================================ */
+function removeLuaComments(content) {
+  return content
+    .replace(/--.*$/gm, "")
+    .replace(/--\[\[[\s\S]*?\]\]/g, "");
+}
 
+/* ===============================
+   DETEKSI OBF ANGKA (AMAN)
+================================ */
+function isNumericObfuscation(content) {
+  // deteksi pola \123\114\101
+  const pattern = /\\\d{2,3}/g;
+  const matches = content.match(pattern);
+  if (!matches) return false;
+
+  // kalau jumlah banyak berarti memang obf angka
+  return matches.length > 50;
+}
+
+/* ===============================
+   ANALISIS FILE
+================================ */
 function analyze(content) {
   let risk = 0;
   let status = "Aman";
   let color = 0x2ecc71;
   let detail = "Tidak ditemukan pola mencurigakan";
 
-  if (dangerPatterns.some(p => content.includes(p))) {
+  const clean = removeLuaComments(content);
+
+  // 🔴 WEBHOOK DISCORD VALID
+  const discordWebhook =
+    /https?:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g;
+
+  const telegramBot =
+    /https?:\/\/api\.telegram\.org\/bot\d+:[A-Za-z0-9_-]+/g;
+
+  if (discordWebhook.test(clean)) {
     risk = 95;
     status = "Bahaya";
     color = 0xe74c3c;
-    detail = "Terdeteksi Webhook Discord / Telegram!";
-  } else if (suspiciousPatterns.some(p => content.includes(p))) {
-    risk = 45;
-    status = "Mencurigakan";
-    color = 0xf1c40f;
-    detail = "Ditemukan fungsi mencurigakan dalam script";
+    detail = "Webhook Discord VALID terdeteksi!";
+  }
+
+  else if (telegramBot.test(clean)) {
+    risk = 95;
+    status = "Bahaya";
+    color = 0xe74c3c;
+    detail = "Bot Telegram VALID terdeteksi!";
+  }
+
+  // 🟡 kombinasi mencurigakan
+  else {
+    const hasHttp = clean.includes("http");
+    const hasExec =
+      clean.includes("os.execute") ||
+      clean.includes("loadstring") ||
+      clean.includes("PerformHttpRequest");
+
+    if (hasHttp && hasExec) {
+      risk = 55;
+      status = "Mencurigakan";
+      color = 0xf1c40f;
+      detail = "Kombinasi network + eksekusi terdeteksi";
+    }
+
+    // Kalau cuma numeric obfuscation → tetap Aman
+    else if (isNumericObfuscation(clean)) {
+      risk = 0;
+      status = "Aman";
+      color = 0x2ecc71;
+      detail = "Obfuscation angka terdeteksi (normal protection)";
+    }
   }
 
   return { risk, status, color, detail };
 }
 
-/* =========================
+/* ===============================
    EVENT MESSAGE
-========================= */
-
+================================ */
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
@@ -108,7 +138,6 @@ client.on("messageCreate", async (message) => {
 
   /* ===== SCAN CHANNEL ===== */
   if (message.channel.id !== SCAN_CHANNEL) return;
-
   if (message.attachments.size === 0) return;
 
   for (const attachment of message.attachments.values()) {
@@ -123,7 +152,10 @@ client.on("messageCreate", async (message) => {
     const filePath = `./${Date.now()}_${attachment.name}`;
 
     try {
-      const response = await axios.get(attachment.url, { responseType: "arraybuffer" });
+      const response = await axios.get(attachment.url, {
+        responseType: "arraybuffer"
+      });
+
       fs.writeFileSync(filePath, response.data);
 
       let content = "";
@@ -131,7 +163,6 @@ client.on("messageCreate", async (message) => {
       if (fileName.endsWith(".zip")) {
         const zip = new AdmZip(filePath);
         const entries = zip.getEntries();
-
         for (let entry of entries) {
           if (!entry.isDirectory) {
             content += entry.getData().toString("utf8");
@@ -144,8 +175,6 @@ client.on("messageCreate", async (message) => {
       const result = analyze(content);
 
       fs.unlinkSync(filePath);
-
-      /* ===== EMBED RESULT ===== */
 
       const embed = new EmbedBuilder()
         .setColor(result.color)
@@ -164,7 +193,7 @@ client.on("messageCreate", async (message) => {
       message.reply({ embeds: [embed] });
 
     } catch (err) {
-      console.log("SCAN ERROR:", err.message);
+      console.log("ERROR:", err.message);
       message.reply("❌ Gagal memproses file.");
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
