@@ -1,194 +1,112 @@
-require("dotenv").config();
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const { 
+    Client, 
+    GatewayIntentBits, 
+    EmbedBuilder 
+} = require("discord.js");
+
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
-const AdmZip = require("adm-zip");
-const Unrar = require("node-unrar-js");
-const Seven = require("node-7z");
-const sevenBin = require("7zip-bin");
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const API_KEY = process.env.API_KEY;
+// 🔒 EXTENSION DIIZINKAN
+const allowedExtensions = [".lua", ".txt", ".zip"];
 
-const SCAN_CHANNEL = "1469740155765572618";
-const AI_CHANNEL = "1475164217115021475";
-
-/* ===== PATTERN DETEKSI ===== */
-const dangerPatterns = [
-  "discord.com/api/webhooks",
-  "discordapp.com/api/webhooks",
-  "api.telegram.org",
-  "t.me/",
-];
-
+// 🔍 POLA MENCURIGAKAN
 const suspiciousPatterns = [
-  "http.request",
-  "socket.connect",
-  "loadstring",
-  "os.execute",
-  "PerformHttpRequest",
-  "SetClipboard",
-  "token",
-  "getfenv",
-  "setfenv",
-  "onClientKey",
-  "getKeyState",
-  "addEventHandler",
-  "triggerServerEvent",
-  "fetchRemote"
+    "api.telegram.org",
+    "telegram.org/bot",
+    "username",
+    "password",
+    "LuaObfuscator",
+    "loadstring",
+    "require('socket')",
+    "http://",
+    "https://"
 ];
 
-/* ===== AI FUNCTION ===== */
-async function askAI(text) {
-  try {
-    const response = await axios.post(
-      "https://apifreellm.com/api/v1/chat",
-      { message: "Balas dengan gaya toxic lucu tapi bercanda: " + text },
-      { headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" } }
-    );
-    return response.data.response || "AI lagi error 😈";
-  } catch (err) {
-    console.log("AI ERROR:", err.message);
-    return "AI lagi tumbang 😭";
-  }
-}
-
-/* ===== ANALISIS FILE ===== */
-function analyze(content) {
-  let risk = 0;
-  let status = "Aman";
-  let color = 0x2ecc71;
-  let detail = "Tidak ditemukan pola mencurigakan";
-
-  if (dangerPatterns.some(p => content.includes(p))) {
-    risk = 95;
-    status = "Bahaya";
-    color = 0xe74c3c;
-    detail = "Terdeteksi Webhook Discord / Telegram!";
-  } else if (suspiciousPatterns.some(p => content.includes(p))) {
-    risk = 45;
-    status = "Mencurigakan";
-    color = 0xf1c40f;
-    detail = "Ditemukan fungsi mencurigakan dalam script";
-  }
-
-  return { risk, status, color, detail };
-}
-
-/* ===== READ FILE CONTENT ===== */
-async function readFileContent(filePath, ext) {
-  let content = "";
-
-  if (ext === ".zip") {
-    const zip = new AdmZip(filePath);
-    zip.getEntries().forEach(entry => {
-      if (!entry.isDirectory) content += entry.getData().toString("utf8") + "\n";
-    });
-  } else if (ext === ".rar") {
-    const data = fs.readFileSync(filePath);
-    const extractor = Unrar.createExtractorFromData(data);
-    const list = extractor.getFileList();
-    if (list[0].state === "SUCCESS") {
-      list[1].fileHeaders.forEach(file => {
-        const extracted = extractor.extractFiles([file.name]);
-        if (extracted[0].state === "SUCCESS") {
-          content += Buffer.from(extracted[1][0].extracted).toString("utf8") + "\n";
-        }
-      });
-    }
-  } else if (ext === ".7z") {
-    const tempDir = `./temp_${Date.now()}`;
-    fs.mkdirSync(tempDir);
-
-    await new Promise((resolve, reject) => {
-      const stream = Seven.extractFull(filePath, tempDir, { $bin: sevenBin.path7za });
-      stream.on("end", () => resolve());
-      stream.on("error", (err) => reject(err));
-    });
-
-    const walk = (dir) => {
-      const files = fs.readdirSync(dir);
-      for (const f of files) {
-        const fullPath = path.join(dir, f);
-        if (fs.statSync(fullPath).isDirectory()) walk(fullPath);
-        else content += fs.readFileSync(fullPath, "utf8") + "\n";
-      }
-    };
-    walk(tempDir);
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  } else {
-    content = fs.readFileSync(filePath, "utf8");
-  }
-
-  return content;
-}
-
-/* ===== EVENT MESSAGE ===== */
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
-  // AI CHANNEL
-  if (message.channel.id === AI_CHANNEL) {
-    await message.channel.sendTyping();
-    const reply = await askAI(message.content);
-    return message.reply(reply);
-  }
-
-  // SCAN CHANNEL
-  if (message.channel.id !== SCAN_CHANNEL) return;
-  if (message.attachments.size === 0) return;
-
-  for (const attachment of message.attachments.values()) {
-    const allowed = [".lua", ".zip", ".txt", ".7z", ".exe", ".rar"];
-    const fileName = attachment.name.toLowerCase();
-    const fileExt = path.extname(fileName);
-
-    if (!allowed.includes(fileExt)) {
-      return message.reply("⚠️ Kirim hanya file .lua .zip .txt .7z .exe .rar");
-    }
-
-    const filePath = `./${Date.now()}_${attachment.name}`;
-    try {
-      const response = await axios.get(attachment.url, { responseType: "arraybuffer" });
-      fs.writeFileSync(filePath, response.data);
-
-      const content = await readFileContent(filePath, fileExt);
-      const result = analyze(content);
-
-      fs.unlinkSync(filePath);
-
-      const embed = new EmbedBuilder()
-        .setColor(result.color)
-        .setTitle("🛡️ Hasil Analisis Keamanan")
-        .addFields(
-          { name: "👤 Pengguna", value: `${message.author}`, inline: false },
-          { name: "📄 Nama File", value: attachment.name, inline: true },
-          { name: "📦 Ukuran File", value: `${(attachment.size / 1024).toFixed(2)} KB`, inline: true },
-          { name: "📊 Status", value: result.status, inline: true },
-          { name: "⚠️ Tingkat Risiko", value: `${result.risk}%`, inline: true },
-          { name: "🔎 Detail Deteksi", value: result.detail, inline: false }
-        )
-        .setFooter({ text: "Advanced Security Scanner • Tatang Bot" })
-        .setTimestamp();
-
-      message.reply({ embeds: [embed] });
-
-    } catch (err) {
-      console.log("SCAN ERROR:", err.message);
-      message.reply("❌ Gagal memproses file.");
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
-  }
+client.once("ready", () => {
+    console.log(`✅ Bot aktif sebagai ${client.user.tag}`);
 });
 
-client.once("ready", () => console.log(`Bot online sebagai ${client.user.tag}`));
-client.login(TOKEN);
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+    if (!message.attachments.size) return;
+
+    const attachment = message.attachments.first();
+    const fileName = attachment.name.toLowerCase();
+
+    // 🚫 CEK FORMAT FILE
+    const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!isAllowed) {
+        const warningEmbed = new EmbedBuilder()
+            .setTitle("⚠️ Format File Tidak Didukung")
+            .setColor(0xff0000)
+            .setDescription("Hanya file berikut yang bisa dianalisis:\n\n• .lua\n• .txt\n• .zip")
+            .setFooter({ text: "Advanced Security Scanner" })
+            .setTimestamp();
+
+        return message.reply({ embeds: [warningEmbed] });
+    }
+
+    try {
+        const response = await axios.get(attachment.url);
+        const content = response.data.toString();
+
+        let detected = [];
+
+        suspiciousPatterns.forEach(pattern => {
+            if (content.includes(pattern)) {
+                detected.push(pattern);
+            }
+        });
+
+        // 📊 HITUNG RISIKO
+        let riskPercent = Math.min(detected.length * 15, 100);
+        let status = "🟢 Aman";
+        let color = 0x00ff00;
+        let detailText = "Tidak ditemukan pola mencurigakan";
+
+        if (riskPercent >= 60) {
+            status = "🔴 Bahaya Tinggi";
+            color = 0xff0000;
+        } else if (riskPercent >= 30) {
+            status = "🟡 Mencurigakan";
+            color = 0xffcc00;
+        }
+
+        if (detected.length > 0) {
+            detailText = detected.map(d => `• ${d}`).join("\n");
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle("🛡️ Hasil Analisis Keamanan")
+            .setColor(color)
+            .addFields(
+                { name: "📌 Status", value: "Analisis file selesai diproses" },
+                { name: "👤 Pengguna", value: `${message.author}` },
+                { name: "📄 Nama File", value: attachment.name },
+                { name: "📦 Ukuran File", value: `${(attachment.size / 1024).toFixed(2)} KB` },
+                { name: "📊 Status Keamanan", value: status },
+                { name: "⚠️ Tingkat Risiko", value: `${riskPercent}%` },
+                { name: "🔎 Detail Deteksi", value: detailText }
+            )
+            .setFooter({ text: "Advanced Security Scanner | Railway System" })
+            .setTimestamp();
+
+        await message.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error(error);
+        message.reply("❌ Gagal membaca atau menganalisis file.");
+    }
+});
+
+// 🔑 LOGIN BOT
+client.login(process.env.TOKEN_DISCORD);
