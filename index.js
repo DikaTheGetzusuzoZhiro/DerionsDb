@@ -3,15 +3,10 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 
-// ================= EXPRESS SERVER (RAILWAY FIX) =================
+// ================= EXPRESS SERVER =================
 const app = express();
-
-app.get('/', (req, res) => {
-  res.send('Bot is running...');
-});
-
+app.get('/', (req, res) => res.send('Bot is running...'));
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log(`🌍 Web server running on port ${PORT}`);
 });
@@ -28,7 +23,6 @@ const client = new Client({
 const SCAN_CHANNEL_ID = "1477131305765572618";
 const AI_CHANNEL_ID   = "1475164217115021475";
 
-// ================= ALLOWED FILE TYPES =================
 const allowedExtensions = [
   ".lua",
   ".zip",
@@ -42,10 +36,13 @@ client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ================= ANALYZE FUNCTION =================
+// ================= SMART ANALYZE FUNCTION =================
 function analyze(content) {
 
-  // ✅ WeAreDevs whitelist
+  let riskScore = 0;
+  let details = [];
+
+  // ✅ Whitelist WeAreDevs
   const weAreDevsPattern =
     /--\[\[\s*v\d+\.\d+\.\d+\s+https:\/\/wearedevs\.net\/obfuscator\s*\]\]/i;
 
@@ -54,11 +51,11 @@ function analyze(content) {
       risk: 0,
       status: "Aman",
       color: 0x2ecc71,
-      detail: "Tidak ditemukan pola mencurigakan dalam file"
+      detail: "Obfuscator WeAreDevs terdeteksi (Whitelist Aman)"
     };
   }
 
-  // 🔴 Discord Webhook VALID
+  // 🔴 Webhook Discord
   const discordWebhook =
     /https?:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g;
 
@@ -71,7 +68,7 @@ function analyze(content) {
     };
   }
 
-  // 🔴 Telegram Bot VALID
+  // 🔴 Telegram Bot
   const telegramBot =
     /https?:\/\/api\.telegram\.org\/bot\d+:[A-Za-z0-9_-]+/g;
 
@@ -84,11 +81,38 @@ function analyze(content) {
     };
   }
 
+  // 🟡 Keylogger / Remote Suspicious Patterns
+  const suspiciousPatterns = [
+    { pattern: /onClientKey/i, name: "onClientKey event" },
+    { pattern: /getKeyState/i, name: "getKeyState usage" },
+    { pattern: /addEventHandler\s*\(\s*["']onClient/i, name: "Client Event Handler" },
+    { pattern: /triggerServerEvent/i, name: "triggerServerEvent" },
+    { pattern: /fetchRemote/i, name: "fetchRemote request" },
+    { pattern: /performHttpRequest/i, name: "HTTP request function" },
+    { pattern: /socket\.http/i, name: "socket.http usage" }
+  ];
+
+  suspiciousPatterns.forEach(item => {
+    if (item.pattern.test(content)) {
+      riskScore += 10;
+      details.push(item.name);
+    }
+  });
+
+  if (riskScore >= 20) {
+    return {
+      risk: Math.min(riskScore, 85),
+      status: "Mencurigakan",
+      color: 0xf1c40f,
+      detail: "Pola mencurigakan: " + details.join(", ")
+    };
+  }
+
   return {
     risk: 0,
     status: "Aman",
     color: 0x2ecc71,
-    detail: "Tidak ditemukan pola mencurigakan dalam file"
+    detail: "Tidak ditemukan pola mencurigakan"
   };
 }
 
@@ -121,7 +145,6 @@ client.on('messageCreate', async (message) => {
       return message.reply({ embeds: [warningEmbed] });
     }
 
-    // ✅ File diizinkan → scan
     try {
 
       const response = await axios.get(attachment.url, {
@@ -167,5 +190,4 @@ client.on('messageCreate', async (message) => {
 
 });
 
-// ================= LOGIN =================
 client.login(process.env.TOKEN);
