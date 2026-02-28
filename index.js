@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const Unrar = require("node-unrar-js");
-const Seven = require("node-7z"); // untuk .7z
+const Seven = require("7zip-min"); // pure JS 7z unpack
 
 const client = new Client({
   intents: [
@@ -24,7 +24,6 @@ const AI_CHANNEL = "1475164217115021475";
 /* =========================
    PATTERN DETEKSI
 ========================= */
-
 const dangerPatterns = [
   "discord.com/api/webhooks",
   "discordapp.com/api/webhooks",
@@ -52,7 +51,6 @@ const suspiciousPatterns = [
 /* =========================
    AI FUNCTION
 ========================= */
-
 async function askAI(text) {
   try {
     const response = await axios.post(
@@ -70,7 +68,6 @@ async function askAI(text) {
 /* =========================
    ANALISIS FILE
 ========================= */
-
 function analyze(content) {
   let risk = 0;
   let status = "Aman";
@@ -95,7 +92,6 @@ function analyze(content) {
 /* =========================
    READ FILE CONTENT
 ========================= */
-
 async function readFileContent(filePath, ext) {
   let content = "";
 
@@ -117,18 +113,18 @@ async function readFileContent(filePath, ext) {
       });
     }
   } else if (ext === ".7z") {
-    // Unpack .7z menggunakan node-7z
     const tempDir = `./temp_${Date.now()}`;
     fs.mkdirSync(tempDir);
-    const extractStream = Seven.extractFull(filePath, tempDir, { $progress: false });
 
     await new Promise((resolve, reject) => {
-      extractStream.on("end", resolve);
-      extractStream.on("error", reject);
+      Seven.extractFull(filePath, tempDir, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
 
     const walk = (dir) => {
-      let files = fs.readdirSync(dir);
+      const files = fs.readdirSync(dir);
       for (const f of files) {
         const fullPath = path.join(dir, f);
         if (fs.statSync(fullPath).isDirectory()) walk(fullPath);
@@ -136,7 +132,6 @@ async function readFileContent(filePath, ext) {
       }
     };
     walk(tempDir);
-
     fs.rmSync(tempDir, { recursive: true, force: true });
   } else {
     content = fs.readFileSync(filePath, "utf8");
@@ -148,23 +143,21 @@ async function readFileContent(filePath, ext) {
 /* =========================
    EVENT MESSAGE
 ========================= */
-
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  /* ===== AI CHANNEL ===== */
+  // ===== AI CHANNEL =====
   if (message.channel.id === AI_CHANNEL) {
     await message.channel.sendTyping();
     const reply = await askAI(message.content);
     return message.reply(reply);
   }
 
-  /* ===== SCAN CHANNEL ===== */
+  // ===== SCAN CHANNEL =====
   if (message.channel.id !== SCAN_CHANNEL) return;
   if (message.attachments.size === 0) return;
 
   for (const attachment of message.attachments.values()) {
-
     const allowed = [".lua", ".zip", ".txt", ".7z", ".exe", ".rar"];
     const fileName = attachment.name.toLowerCase();
     const fileExt = path.extname(fileName);
@@ -183,7 +176,7 @@ client.on("messageCreate", async (message) => {
 
       fs.unlinkSync(filePath);
 
-      /* ===== EMBED RESULT ===== */
+      // ===== EMBED RESULT =====
       const embed = new EmbedBuilder()
         .setColor(result.color)
         .setTitle("🛡️ Hasil Analisis Keamanan")
