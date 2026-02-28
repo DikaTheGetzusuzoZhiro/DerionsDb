@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const Unrar = require("node-unrar-js");
-const Seven = require("7zip-min"); // pure JS 7z unpack
+const Seven = require("7zip-min");
 
 const client = new Client({
   intents: [
@@ -18,12 +18,10 @@ const client = new Client({
 const TOKEN = process.env.DISCORD_TOKEN;
 const API_KEY = process.env.API_KEY;
 
-const SCAN_CHANNEL = "1469740150522380299";
+const SCAN_CHANNEL = "1469740155765572618";
 const AI_CHANNEL = "1475164217115021475";
 
-/* =========================
-   PATTERN DETEKSI
-========================= */
+/* ===== PATTERN DETEKSI ===== */
 const dangerPatterns = [
   "discord.com/api/webhooks",
   "discordapp.com/api/webhooks",
@@ -48,9 +46,7 @@ const suspiciousPatterns = [
   "fetchRemote"
 ];
 
-/* =========================
-   AI FUNCTION
-========================= */
+/* ===== AI FUNCTION ===== */
 async function askAI(text) {
   try {
     const response = await axios.post(
@@ -65,9 +61,7 @@ async function askAI(text) {
   }
 }
 
-/* =========================
-   ANALISIS FILE
-========================= */
+/* ===== ANALISIS FILE ===== */
 function analyze(content) {
   let risk = 0;
   let status = "Aman";
@@ -89,9 +83,7 @@ function analyze(content) {
   return { risk, status, color, detail };
 }
 
-/* =========================
-   READ FILE CONTENT
-========================= */
+/* ===== READ FILE CONTENT ===== */
 async function readFileContent(filePath, ext) {
   let content = "";
 
@@ -140,20 +132,18 @@ async function readFileContent(filePath, ext) {
   return content;
 }
 
-/* =========================
-   EVENT MESSAGE
-========================= */
+/* ===== EVENT MESSAGE ===== */
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // ===== AI CHANNEL =====
+  // AI CHANNEL
   if (message.channel.id === AI_CHANNEL) {
     await message.channel.sendTyping();
     const reply = await askAI(message.content);
     return message.reply(reply);
   }
 
-  // ===== SCAN CHANNEL =====
+  // SCAN CHANNEL
   if (message.channel.id !== SCAN_CHANNEL) return;
   if (message.attachments.size === 0) return;
 
@@ -176,7 +166,6 @@ client.on("messageCreate", async (message) => {
 
       fs.unlinkSync(filePath);
 
-      // ===== EMBED RESULT =====
       const embed = new EmbedBuilder()
         .setColor(result.color)
         .setTitle("🛡️ Hasil Analisis Keamanan")
