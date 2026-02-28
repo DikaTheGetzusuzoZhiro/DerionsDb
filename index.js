@@ -15,10 +15,11 @@ const client = new Client({
 });
 
 // =======================
-// 🔒 SCANNER CONFIG (ASLI)
+// 🔒 CHANNEL CONFIG
 // =======================
 
-const allowedChannelId = "1477131305765572618";
+const scannerChannelId = "1477131305765572618";
+const aiChannelId = "1475164217115021475";
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
@@ -50,7 +51,7 @@ async function generateRoast(input) {
     const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
-            model: "llama-3.1-8b-instant", // MODEL AKTIF & STABIL
+            model: "llama-3.1-8b-instant",
             messages: [
                 {
                     role: "system",
@@ -90,30 +91,27 @@ client.on("messageCreate", async (message) => {
     try {
 
         // =======================
-        // 🤖 COMMAND !ai
+        // 🤖 AI ONLY CHANNEL
         // =======================
-        if (content.startsWith("!ai")) {
-            const userInput = content.slice(3).trim();
-            if (!userInput) return message.reply("Ngetik aja setengah-setengah.");
+        if (message.channel.id === aiChannelId) {
 
-            const roast = await generateRoast(userInput);
-            return message.reply(roast);
-        }
+            if (content.startsWith("!ai")) {
+                const userInput = content.slice(3).trim();
+                if (!userInput) return message.reply("Ngetik aja setengah-setengah.");
 
-        // =======================
-        // 🔥 AUTO TYPO ATTACK
-        // =======================
-        if (detectTypo(content)) {
-            const roast = await generateRoast("User typo parah: " + content);
-            return message.reply(roast);
-        }
+                const roast = await generateRoast(userInput);
+                return message.reply(roast);
+            }
 
-        // =======================
-        // 🔥 AUTO ROAST RANDOM 30%
-        // =======================
-        if (Math.random() < 0.3) {
-            const roast = await generateRoast(content);
-            message.reply(roast);
+            if (detectTypo(content)) {
+                const roast = await generateRoast("User typo parah: " + content);
+                return message.reply(roast);
+            }
+
+            if (Math.random() < 0.3) {
+                const roast = await generateRoast(content);
+                return message.reply(roast);
+            }
         }
 
     } catch (err) {
@@ -121,26 +119,10 @@ client.on("messageCreate", async (message) => {
     }
 
     // =======================
-    // 🛡️ SCANNER SYSTEM
+    // 🛡️ SCANNER ONLY CHANNEL
     // =======================
 
-    if (message.channel.id !== allowedChannelId) {
-
-        if (message.attachments.size > 0) {
-            const warnEmbed = new EmbedBuilder()
-                .setTitle("🚫 Channel Tidak Diizinkan")
-                .setColor(0xff0000)
-                .setDescription(
-                    `Bot scanner hanya bisa digunakan di channel:\n<#!${allowedChannelId}>`
-                )
-                .setFooter({ text: "Deteksi Keylogger by Tatang" })
-                .setTimestamp();
-
-            return message.reply({ embeds: [warnEmbed] });
-        }
-
-        return;
-    }
+    if (message.channel.id !== scannerChannelId) return;
 
     if (!message.attachments.size) return;
 
@@ -191,7 +173,6 @@ client.on("messageCreate", async (message) => {
             .setTitle("🛡️ Hasil Analisis Keamanan")
             .setColor(color)
             .addFields(
-                { name: "📌 Status", value: "Analisis file selesai diproses" },
                 { name: "👤 Pengguna", value: `${message.author}` },
                 { name: "📄 Nama File", value: attachment.name },
                 { name: "📦 Ukuran File", value: `${(attachment.size / 1024).toFixed(2)} KB` },
