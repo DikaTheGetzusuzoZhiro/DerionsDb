@@ -1,0 +1,16 @@
+{
+  "name": "tatang-bot",
+  "version": "1.0.0",
+  "description": "Discord bot AI toxic + keylogger scanner",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "discord.js": "^14.14.0",
+    "adm-zip": "^0.5.11",
+    "node-unrar-js": "^0.3.0",
+    "7zip-min": "^0.3.0"
+  }
+}
