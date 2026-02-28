@@ -52,75 +52,92 @@ function removeLuaComments(content) {
 }
 
 /* ===============================
-   DETEKSI OBF ANGKA (AMAN)
+   DETEKSI NUMERIC OBF (AMAN)
 ================================ */
-function isNumericObfuscation(content) {
-  // deteksi pola \123\114\101
-  const pattern = /\\\d{2,3}/g;
-  const matches = content.match(pattern);
-  if (!matches) return false;
-
-  // kalau jumlah banyak berarti memang obf angka
-  return matches.length > 50;
+function isNumericObf(content) {
+  const matches = content.match(/\\\d{2,3}/g);
+  return matches && matches.length > 50;
 }
 
 /* ===============================
    ANALISIS FILE
 ================================ */
 function analyze(content) {
-  let risk = 0;
-  let status = "Aman";
-  let color = 0x2ecc71;
-  let detail = "Tidak ditemukan pola mencurigakan";
 
   const clean = removeLuaComments(content);
 
-  // 🔴 WEBHOOK DISCORD VALID
+  // ✅ WHITELIST WEAREDEVS OBFUSCATOR
+  const weAreDevsPattern =
+    /v\d+\.\d+\.\d+\s+https:\/\/wearedevs\.net\/obfuscator/gi;
+
+  if (weAreDevsPattern.test(clean)) {
+    return {
+      risk: 0,
+      status: "Aman",
+      color: 0x2ecc71,
+      detail: "Obfuscated by WeAreDevs (whitelisted)"
+    };
+  }
+
+  // 🔴 DISCORD WEBHOOK VALID
   const discordWebhook =
     /https?:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g;
 
+  if (discordWebhook.test(clean)) {
+    return {
+      risk: 95,
+      status: "Bahaya",
+      color: 0xe74c3c,
+      detail: "Webhook Discord VALID terdeteksi!"
+    };
+  }
+
+  // 🔴 TELEGRAM BOT VALID
   const telegramBot =
     /https?:\/\/api\.telegram\.org\/bot\d+:[A-Za-z0-9_-]+/g;
 
-  if (discordWebhook.test(clean)) {
-    risk = 95;
-    status = "Bahaya";
-    color = 0xe74c3c;
-    detail = "Webhook Discord VALID terdeteksi!";
+  if (telegramBot.test(clean)) {
+    return {
+      risk: 95,
+      status: "Bahaya",
+      color: 0xe74c3c,
+      detail: "Bot Telegram VALID terdeteksi!"
+    };
   }
 
-  else if (telegramBot.test(clean)) {
-    risk = 95;
-    status = "Bahaya";
-    color = 0xe74c3c;
-    detail = "Bot Telegram VALID terdeteksi!";
+  // 🟡 Kombinasi mencurigakan
+  const hasHttp = clean.includes("http");
+  const hasExec =
+    clean.includes("os.execute") ||
+    clean.includes("loadstring") ||
+    clean.includes("PerformHttpRequest");
+
+  if (hasHttp && hasExec) {
+    return {
+      risk: 55,
+      status: "Mencurigakan",
+      color: 0xf1c40f,
+      detail: "Kombinasi network + eksekusi terdeteksi"
+    };
   }
 
-  // 🟡 kombinasi mencurigakan
-  else {
-    const hasHttp = clean.includes("http");
-    const hasExec =
-      clean.includes("os.execute") ||
-      clean.includes("loadstring") ||
-      clean.includes("PerformHttpRequest");
-
-    if (hasHttp && hasExec) {
-      risk = 55;
-      status = "Mencurigakan";
-      color = 0xf1c40f;
-      detail = "Kombinasi network + eksekusi terdeteksi";
-    }
-
-    // Kalau cuma numeric obfuscation → tetap Aman
-    else if (isNumericObfuscation(clean)) {
-      risk = 0;
-      status = "Aman";
-      color = 0x2ecc71;
-      detail = "Obfuscation angka terdeteksi (normal protection)";
-    }
+  // 🟢 Numeric obf dianggap aman
+  if (isNumericObf(clean)) {
+    return {
+      risk: 0,
+      status: "Aman",
+      color: 0x2ecc71,
+      detail: "Numeric obfuscation terdeteksi (normal protection)"
+    };
   }
 
-  return { risk, status, color, detail };
+  // 🟢 Default Aman
+  return {
+    risk: 0,
+    status: "Aman",
+    color: 0x2ecc71,
+    detail: "Tidak ditemukan pola mencurigakan"
+  };
 }
 
 /* ===============================
@@ -129,14 +146,14 @@ function analyze(content) {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  /* ===== AI CHANNEL ===== */
+  // ===== AI CHANNEL =====
   if (message.channel.id === AI_CHANNEL) {
     await message.channel.sendTyping();
     const reply = await askAI(message.content);
     return message.reply(reply);
   }
 
-  /* ===== SCAN CHANNEL ===== */
+  // ===== SCAN CHANNEL =====
   if (message.channel.id !== SCAN_CHANNEL) return;
   if (message.attachments.size === 0) return;
 
