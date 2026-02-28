@@ -7,10 +7,12 @@ const {
 const express = require('express');
 const axios = require('axios');
 
+// ================= WEB SERVER (Railway Keep Alive) =================
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running...'));
 app.listen(3000, () => console.log('Web server running'));
 
+// ================= DISCORD CLIENT =================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -22,11 +24,12 @@ const client = new Client({
 const SCAN_CHANNEL_ID = "1477131305765572618";
 const AI_CHANNEL_ID   = "1475164217115021475";
 
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
+// ================= READY EVENT (FIXED) =================
+client.once('clientReady', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ================= ANALYZE =================
+// ================= ANALYZE FUNCTION =================
 function analyze(content) {
 
   // ✅ Whitelist WeAreDevs
@@ -68,6 +71,7 @@ function analyze(content) {
     };
   }
 
+  // 🟢 Default Aman
   return {
     risk: 0,
     status: "Aman",
@@ -75,7 +79,7 @@ function analyze(content) {
     detail: "Tidak ditemukan pola mencurigakan dalam file"
   };
 }
-// ===========================================
+// =====================================================
 
 
 // ================= MESSAGE EVENT =================
@@ -125,14 +129,14 @@ client.on('messageCreate', async (message) => {
 
     if (!message.content) return;
 
-    const aiReply = new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setTitle('🤖 AI Response')
       .setColor(0x3498db)
-      .setDescription("AI Mode aktif.\n\nFitur AI bisa kamu kembangkan di sini.")
+      .setDescription("AI Mode aktif.\n\nKamu bisa integrasikan OpenAI API di sini.")
       .setFooter({ text: 'Tatang AI System' })
       .setTimestamp();
 
-    message.reply({ embeds: [aiReply] });
+    message.reply({ embeds: [embed] });
   }
 
 });
