@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
-
+const path = require('path');
 
 // ================= EXPRESS SERVER (RAILWAY FIX) =================
 const app = express();
@@ -16,7 +16,6 @@ app.listen(PORT, () => {
   console.log(`🌍 Web server running on port ${PORT}`);
 });
 
-
 // ================= DISCORD CLIENT =================
 const client = new Client({
   intents: [
@@ -29,15 +28,24 @@ const client = new Client({
 const SCAN_CHANNEL_ID = "1477131305765572618";
 const AI_CHANNEL_ID   = "1475164217115021475";
 
+// ================= ALLOWED FILE TYPES =================
+const allowedExtensions = [
+  ".lua",
+  ".zip",
+  ".txt",
+  ".7z",
+  ".exe",
+  ".rar"
+];
+
 client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-
 // ================= ANALYZE FUNCTION =================
 function analyze(content) {
 
-  // ✅ Whitelist WeAreDevs
+  // ✅ WeAreDevs whitelist
   const weAreDevsPattern =
     /--\[\[\s*v\d+\.\d+\.\d+\s+https:\/\/wearedevs\.net\/obfuscator\s*\]\]/i;
 
@@ -84,7 +92,6 @@ function analyze(content) {
   };
 }
 
-
 // ================= MESSAGE EVENT =================
 client.on('messageCreate', async (message) => {
 
@@ -97,9 +104,26 @@ client.on('messageCreate', async (message) => {
 
     const attachment = message.attachments.first();
     const fileName = attachment.name;
-    const fileSize = (attachment.size / 1024).toFixed(2);
+    const fileExt = path.extname(fileName).toLowerCase();
 
+    // ❌ File tidak diizinkan
+    if (!allowedExtensions.includes(fileExt)) {
+
+      const warningEmbed = new EmbedBuilder()
+        .setTitle("⚠️ File Tidak Diizinkan")
+        .setColor(0xf1c40f)
+        .setDescription(
+          `Ekstensi **${fileExt}** tidak diperbolehkan.\n\n` +
+          `File yang diizinkan:\n${allowedExtensions.join(", ")}`
+        )
+        .setTimestamp();
+
+      return message.reply({ embeds: [warningEmbed] });
+    }
+
+    // ✅ File diizinkan → scan
     try {
+
       const response = await axios.get(attachment.url, {
         responseType: 'arraybuffer'
       });
@@ -113,12 +137,10 @@ client.on('messageCreate', async (message) => {
         .addFields(
           { name: '👤 Pengguna', value: `${message.author}`, inline: false },
           { name: '📄 Nama File', value: fileName, inline: false },
-          { name: '📦 Ukuran File', value: `${fileSize} KB`, inline: false },
           { name: '📊 Status', value: result.status, inline: false },
           { name: '⚠️ Tingkat Risiko', value: `${result.risk}%`, inline: false },
           { name: '🔎 Detail Deteksi', value: result.detail, inline: false }
         )
-        .setFooter({ text: 'Tatang Bot • Advanced Security Scanner' })
         .setTimestamp();
 
       await message.reply({ embeds: [embed] });
@@ -137,15 +159,13 @@ client.on('messageCreate', async (message) => {
     const embed = new EmbedBuilder()
       .setTitle('🤖 AI Response')
       .setColor(0x3498db)
-      .setDescription("AI Mode aktif.\n\nKamu bisa integrasikan OpenAI API di sini.")
-      .setFooter({ text: 'Tatang AI System' })
+      .setDescription("AI Mode aktif.")
       .setTimestamp();
 
     await message.reply({ embeds: [embed] });
   }
 
 });
-
 
 // ================= LOGIN =================
 client.login(process.env.TOKEN);
