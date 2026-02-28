@@ -15,7 +15,7 @@ const client = new Client({
 });
 
 // =======================
-// 🔒 SCANNER CONFIG
+// 🔒 SCANNER CONFIG (ASLI)
 // =======================
 
 const allowedChannelId = "1477131305765572618";
@@ -50,7 +50,7 @@ async function generateRoast(input) {
     const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
-            model: "llama3-70b-8192",
+            model: "llama-3.1-8b-instant", // MODEL AKTIF & STABIL
             messages: [
                 {
                     role: "system",
@@ -78,7 +78,7 @@ Tanpa ujaran kebencian ras/agama atau ancaman kekerasan.
     return response.data.choices[0].message.content;
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
     console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
 });
 
