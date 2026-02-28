@@ -1,16 +1,21 @@
-const { 
-  Client, 
-  GatewayIntentBits, 
-  EmbedBuilder 
-} = require('discord.js');
-
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 
-// ================= WEB SERVER (Railway Keep Alive) =================
+
+// ================= EXPRESS SERVER (RAILWAY FIX) =================
 const app = express();
-app.get('/', (req, res) => res.send('Bot is running...'));
-app.listen(3000, () => console.log('Web server running'));
+
+app.get('/', (req, res) => {
+  res.send('Bot is running...');
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🌍 Web server running on port ${PORT}`);
+});
+
 
 // ================= DISCORD CLIENT =================
 const client = new Client({
@@ -24,10 +29,10 @@ const client = new Client({
 const SCAN_CHANNEL_ID = "1477131305765572618";
 const AI_CHANNEL_ID   = "1475164217115021475";
 
-// ================= READY EVENT (FIXED) =================
 client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
+
 
 // ================= ANALYZE FUNCTION =================
 function analyze(content) {
@@ -71,7 +76,6 @@ function analyze(content) {
     };
   }
 
-  // 🟢 Default Aman
   return {
     risk: 0,
     status: "Aman",
@@ -79,7 +83,6 @@ function analyze(content) {
     detail: "Tidak ditemukan pola mencurigakan dalam file"
   };
 }
-// =====================================================
 
 
 // ================= MESSAGE EVENT =================
@@ -97,9 +100,11 @@ client.on('messageCreate', async (message) => {
     const fileSize = (attachment.size / 1024).toFixed(2);
 
     try {
-      const response = await axios.get(attachment.url);
-      const content = response.data.toString();
+      const response = await axios.get(attachment.url, {
+        responseType: 'arraybuffer'
+      });
 
+      const content = Buffer.from(response.data).toString('utf8');
       const result = analyze(content);
 
       const embed = new EmbedBuilder()
@@ -116,11 +121,11 @@ client.on('messageCreate', async (message) => {
         .setFooter({ text: 'Tatang Bot • Advanced Security Scanner' })
         .setTimestamp();
 
-      message.reply({ embeds: [embed] });
+      await message.reply({ embeds: [embed] });
 
     } catch (err) {
       console.error(err);
-      message.reply("❌ Gagal memproses file.");
+      await message.reply("❌ Gagal memproses file.");
     }
   }
 
@@ -136,10 +141,11 @@ client.on('messageCreate', async (message) => {
       .setFooter({ text: 'Tatang AI System' })
       .setTimestamp();
 
-    message.reply({ embeds: [embed] });
+    await message.reply({ embeds: [embed] });
   }
 
 });
-// ==================================================
 
+
+// ================= LOGIN =================
 client.login(process.env.TOKEN);
