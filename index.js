@@ -14,7 +14,10 @@ const client = new Client({
     ]
 });
 
-// ✅ EXTENSION YANG DIIZINKAN
+// 🔒 CHANNEL YANG DIIZINKAN
+const allowedChannelId = "1477131305765572618";
+
+// 🔒 EXTENSION DIIZINKAN
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
 // ⚠️ POLA MENCURIGAKAN (50%)
@@ -41,6 +44,26 @@ client.once("ready", () => {
 
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
+
+    // 🚫 JIKA BUKAN CHANNEL YANG DIIZINKAN
+    if (message.channel.id !== allowedChannelId) {
+
+        if (message.attachments.size > 0) {
+            const warnEmbed = new EmbedBuilder()
+                .setTitle("🚫 Channel Tidak Diizinkan")
+                .setColor(0xff0000)
+                .setDescription(
+                    `Bot scanner hanya bisa digunakan di channel:\n<#!${allowedChannelId}>`
+                )
+                .setFooter({ text: "Deteksi Keylogger by Tatang" })
+                .setTimestamp();
+
+            return message.reply({ embeds: [warnEmbed] });
+        }
+
+        return;
+    }
+
     if (!message.attachments.size) return;
 
     const attachment = message.attachments.first();
@@ -54,7 +77,7 @@ client.on("messageCreate", async (message) => {
             .setTitle("⚠️ Format File Tidak Didukung")
             .setColor(0xff0000)
             .setDescription("Hanya file berikut yang bisa dianalisis:\n\n• .lua\n• .txt\n• .zip\n• .7z")
-            .setFooter({ text: "Advanced Security Scanner" })
+            .setFooter({ text: "Deteksi Keylogger by Tatang" })
             .setTimestamp();
 
         return message.reply({ embeds: [warningEmbed] });
@@ -100,7 +123,7 @@ client.on("messageCreate", async (message) => {
                 { name: "⚠️ Tingkat Risiko", value: `${riskPercent}%` },
                 { name: "🔎 Detail Deteksi", value: detailText }
             )
-            .setFooter({ text: "Deteksi Keylogger | By Tatang" })
+            .setFooter({ text: "Deteksi Keylogger by Tatang" })
             .setTimestamp();
 
         await message.reply({ embeds: [embed] });
