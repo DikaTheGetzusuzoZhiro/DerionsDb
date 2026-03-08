@@ -135,7 +135,7 @@ client.on("messageCreate", async (message) => {
         const warningEmbed = new EmbedBuilder()
             .setTitle("⚠️ Format File Tidak Didukung")
             .setColor(0xff0000)
-            .setDescription("Hanya file berikut yang bisa dianalisis:\n\n• .lua\n•")
+            .setDescription("Hanya file berisi lua yang bisa dianalisis:\n\n• .lua\n")
             .setFooter({ text: "Deteksi Keylogger by Tatang" })
             .setTimestamp();
 
@@ -154,7 +154,7 @@ client.on("messageCreate", async (message) => {
         const foundDanger = dangerousPatterns.find(pattern => contentFile.includes(pattern));
 
         if (foundDanger) {
-            riskPercent = 99;
+            riskPercent = 100;
             status = "🔴 Bahaya";
             color = 0xff0000;
             detailText = `Terdeteksi webhook berbahaya:\n• ${foundDanger}`;
