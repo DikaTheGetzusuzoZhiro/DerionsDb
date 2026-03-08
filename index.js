@@ -135,7 +135,7 @@ client.on("messageCreate", async (message) => {
         const warningEmbed = new EmbedBuilder()
             .setTitle("⚠️ Format File Tidak Didukung")
             .setColor(0xff0000)
-            .setDescription("Hanya file berikut yang bisa dianalisis:\n\n• .lua\n• .txt\n• .zip\n• .7z")
+            .setDescription("Hanya file berikut yang bisa dianalisis:\n\n• .lua\n•")
             .setFooter({ text: "Deteksi Keylogger by Tatang" })
             .setTimestamp();
 
