@@ -158,14 +158,14 @@ client.on("messageCreate", async (message) => {
             .addFields(
                 { 
                     name: '🛠️ COMMANDS UTAMA', 
-                    value: `**\`!help\`**\nMenampilkan menu bantuan ini beserta penjelasan lengkap dari setiap fitur yang ada di dalam bot.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan **Character Story (CS)** GTA Roleplay. Kamu akan diarahkan mengisi server, alur cerita (Good/Bad side), dan detail karakter. AI akan secara otomatis meracik cerita novel 3 paragraf berdasarkan datamu.\n\n**\`!ai [pesan]\`**\n*(Hanya berfungsi di Channel AI)*. Gunakan perintah ini untuk mengobrol dengan AI bot. Hati-hati, AI ini memiliki personalitas Gamer Nyolot, Sarkas, dan Brutal. Dia akan me-roast pertanyaanmu tanpa ampun!`
+                    value: `**\`!help\`**\nMenampilkan menu bantuan ini beserta penjelasan lengkap dari setiap fitur yang ada di dalam bot.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan **Character Story (CS)** GTA Roleplay. Kamu akan diarahkan mengisi server, alur cerita (Good/Bad side), dan detail karakter. AI akan secara otomatis meracik cerita novel 3 paragraf berdasarkan datamu.\n\n**\`!ai [pesan]\`**\n*(Hanya berfungsi di Channel AI)*. Gunakan perintah ini untuk mengobrol dengan AI bot.`
                 },
                 {
                     name: '🤖 FITUR OTOMATIS (PASIF)',
-                    value: `**🛡️ Lua & Script Scanner**\n*(Hanya di Channel Scanner)*. Jika kamu mengirim file \`.lua\`, \`.txt\`, \`.zip\`, atau \`.7z\`, bot akan otomatis membedahnya dan mencari kode berbahaya seperti Webhook Pencuri, Keylogger, atau Obfuscator (MoonSec, dll). Bot akan memberikan skor risiko dari 0% hingga 100%.\n\n**😂 Auto-Roast Typo**\nJika kamu mengetik dengan typo parah (seperti huruf berulang-ulang berlebihan) di channel AI, bot akan otomatis mendeteksi dan me-roast cara ngetikmu.\n\n**🎲 Random AI Response**\nSetiap pesan biasa yang kamu kirim di channel AI memiliki peluang 30% untuk tiba-tiba di-roast oleh bot tanpa perlu menggunakan awalan \`!ai\`.`
+                    value: `**🛡️ Lua & Script Scanner**\n*(Hanya di Channel Scanner)*. Jika kamu mengirim file lua bot akan otomatis membedahnya dan mencari kode berbahaya seperti Webhook Pencuri, Keylogger, atau Obfuscator (MoonSec, dll)`
                 }
             )
-            .setFooter({ text: 'Created By Tatang | Sistem Terintegrasi AI & Keamanan' })
+            .setFooter({ text: 'ASISTEN | TATANG' })
             .setTimestamp();
 
         return message.reply({ embeds: [helpEmbed] });
