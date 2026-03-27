@@ -69,7 +69,7 @@ function detectTypo(text) {
     return /(.)\1{4,}/i.test(text);
 }
 
-async function generateRoast(input) {
+async function generateAIResponse(input) {
     const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
@@ -77,18 +77,17 @@ async function generateRoast(input) {
             messages: [
                 {
                     role: "system",
-                    content: `
-Kamu AI toxic brutal, sarkas, meremehkan, gaya gamer nyolot.
-Jawaban panjang dan kreatif.
-Tanpa ujaran kebencian ras/agama atau ancaman kekerasan.
-`
+                    content: `Kamu adalah asisten AI. Aturan utamamu:
+1. Jawab pertanyaan pengguna dengan singkat, padat, dan jelas. Jangan memberikan penjelasan panjang yang bertele-tele kecuali diminta.
+2. Jawab semua pertanyaan dengan baik dan informatif layaknya AI pada umumnya.
+3. Sesuaikan sikapmu dengan pengguna: Jika pengguna bertanya dengan sopan, balas dengan ramah. Namun, jika pengguna berkata kasar, toxic, atau menghina, balas dengan kasar, nyolot, dan sarkas.`
                 },
                 {
                     role: "user",
                     content: input
                 }
             ],
-            temperature: 1.2
+            temperature: 0.7
         },
         {
             headers: {
@@ -139,7 +138,7 @@ function analyzeContent(text) {
 
 client.once('ready', () => {
     console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
-    console.log(`✅ Scanner, AI Roast, dan Panel CS siap melayani! (Created by Tatang)`);
+    console.log(`✅ Scanner, AI Chat, dan Panel CS siap melayani! (Created by Tatang)`);
 });
 
 client.on("messageCreate", async (message) => {
@@ -165,7 +164,7 @@ client.on("messageCreate", async (message) => {
                     value: `**🛡️ Lua & Script Scanner**\n*(Hanya di Channel Scanner)*. Jika kamu mengirim file lua bot akan otomatis membedahnya dan mencari kode berbahaya seperti Webhook Pencuri, Keylogger, atau Obfuscator (MoonSec, dll)`
                 }
             )
-            .setFooter({ text: 'ASISTEN | TATANG' })
+            .setFooter({ text: 'ASISTEN | TATANG COMUNITY' })
             .setTimestamp();
 
         return message.reply({ embeds: [helpEmbed] });
@@ -193,25 +192,25 @@ client.on("messageCreate", async (message) => {
     }
 
     // ----------------------------------------------------
-    // 🤖 AI CHANNEL LOGIC (Roast & Chat)
+    // 🤖 AI CHANNEL LOGIC (Chat)
     // ----------------------------------------------------
     if (message.channel.id === aiChannelId) {
         try {
             if (content.startsWith("!ai")) {
                 const userInput = content.slice(3).trim();
-                if (!userInput) return message.reply("Ngetik aja setengah-setengah.");
-                const roast = await generateRoast(userInput);
-                return message.reply(roast);
+                if (!userInput) return message.reply("Mau nanya apa? Ketik pesannya setelah !ai.");
+                const aiResponse = await generateAIResponse(userInput);
+                return message.reply(aiResponse);
             }
 
             if (detectTypo(content)) {
-                const roast = await generateRoast("User typo parah: " + content);
-                return message.reply(roast);
+                const aiResponse = await generateAIResponse("Tanggapi pesan ini yang sepertinya banyak typo: " + content);
+                return message.reply(aiResponse);
             }
 
             if (Math.random() < 0.3) {
-                const roast = await generateRoast(content);
-                return message.reply(roast);
+                const aiResponse = await generateAIResponse(content);
+                return message.reply(aiResponse);
             }
         } catch (err) {
             console.error("AI Error:", err.response?.data || err.message);
@@ -293,7 +292,7 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.reply({ 
             content: 'Pilih server di mana karaktermu akan bermain:', 
             components: [selectMenu],
-            ephemeral: true // Buat ephemeral jika tidak ingin menuhin chat, atau hapus baris ini agar publik
+            ephemeral: true
         });
     }
 
