@@ -10,10 +10,7 @@ const {
     StringSelectMenuBuilder, 
     ModalBuilder, 
     TextInputBuilder, 
-    TextInputStyle,
-    SlashCommandBuilder,
-    REST,
-    Routes
+    TextInputStyle 
 } = require('discord.js');
 const axios = require('axios');
 const Groq = require('groq-sdk');
@@ -43,9 +40,6 @@ const groq = new Groq({
 const scannerChannelId = "1477131305765572618";
 const aiChannelId = "1475164217115021475";
 
-// Role ID Khusus Upload
-const roleUploadId = "1466470849266848009";
-
 // Scanner Config
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 const detectionPatterns = [
@@ -66,8 +60,8 @@ const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50 };
 
 // In-Memory Storage
 const csSessions = new Map();
-const spamConfigs = new Map(); 
-const activeSpams = new Map(); 
+const spamConfigs = new Map(); // Menyimpan target spam user
+const activeSpams = new Map(); // Menyimpan interval spam yang sedang berjalan
 
 // =======================
 // 🛠️ HELPER FUNCTIONS
@@ -144,32 +138,9 @@ function analyzeContent(text) {
 // 🚀 BOT EVENTS
 // =======================
 
-client.once('ready', async () => {
+client.once('ready', () => {
     console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
-
-    // --- Mendaftarkan Slash Commands ---
-    const commands = [
-        new SlashCommandBuilder()
-            .setName('upload')
-            .setDescription('Upload postingan script ke channel (Khusus Uploader)')
-            .addStringOption(option => option.setName('judul').setDescription('Judul script').setRequired(true))
-            .addStringOption(option => option.setName('cmd').setDescription('Command penggunaan script').setRequired(true))
-            .addStringOption(option => option.setName('deskripsi').setDescription('Deskripsi script').setRequired(true))
-            .addStringOption(option => option.setName('author').setDescription('Credit / Nama pembuat').setRequired(true))
-            .addStringOption(option => option.setName('link_download').setDescription('Link untuk mendownload script').setRequired(true))
-            .addAttachmentOption(option => option.setName('foto').setDescription('Foto/Screenshot preview').setRequired(true))
-    ].map(command => command.toJSON());
-
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    try {
-        console.log('🔄 Memuat slash commands...');
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log('✅ Slash commands berhasil dimuat!');
-    } catch (error) {
-        console.error('❌ Gagal memuat slash commands:', error);
-    }
-
-    console.log(`✅ Scanner, AI Chat, Upload (Slash), Panel Spam, dan Panel CS siap melayani! (Created by TATANG COMUNITY)`);
+    console.log(`✅ Scanner, AI Chat, Upload, Panel Spam, dan Panel CS siap melayani! (Created by TATANG COMUNITY)`);
 });
 
 client.on("messageCreate", async (message) => {
@@ -188,7 +159,7 @@ client.on("messageCreate", async (message) => {
             .addFields(
                 { 
                     name: '🛠️ COMMANDS UTAMA', 
-                    value: `**\`!help\`**\nMenampilkan menu ini.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan Character Story (CS) GTA Roleplay.\n\n**\`!ai [pesan]\`**\n*(Hanya di Channel AI)*. Ngobrol dengan AI.\n\n**\`/upload\`**\n(Gunakan Slash Command). Membuat panel postingan download script. Hanya bisa digunakan oleh role khusus.\n\n**\`!panelspam\`**\nMenampilkan panel eksekusi (spam) untuk menghancurkan Webhook/Token Tele pembuat keylogger.`
+                    value: `**\`!help\`**\nMenampilkan menu ini.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan Character Story (CS) GTA Roleplay.\n\n**\`!ai [pesan]\`**\n*(Hanya di Channel AI)*. Ngobrol dengan AI.\n\n**\`!upload Judul | Command | Deskripsi | Author\`**\nMembuat panel postingan download script. **Wajib** lampirkan file script, dan boleh tambah lampiran gambar (opsional) sebagai preview.\n\n**\`!panelspam\`**\nMenampilkan panel eksekusi (spam) untuk menghancurkan Webhook/Token Tele pembuat keylogger.`
                 },
                 {
                     name: '🤖 FITUR OTOMATIS (PASIF)',
@@ -199,6 +170,48 @@ client.on("messageCreate", async (message) => {
             .setTimestamp();
 
         return message.reply({ embeds: [helpEmbed] });
+    }
+
+    // ----------------------------------------------------
+    // 📤 COMMAND: !upload
+    // ----------------------------------------------------
+    if (content.toLowerCase().startsWith('!upload')) {
+        const argsText = content.slice(7).trim();
+        const parts = argsText.split('|').map(p => p.trim());
+        
+        if (parts.length < 4) {
+            return message.reply("⚠️ **Format salah!** Gunakan pemisah tanda `|`.\n**Format:** `!upload Judul | Command | Deskripsi | Author`\n*Jangan lupa lampirkan file scriptnya sebelum dikirim!*");
+        }
+
+        const [judul, cmd, deskripsi, author] = parts;
+        const fileAttachment = message.attachments.first();
+        const imageAttachment = message.attachments.find(a => a.contentType && a.contentType.startsWith('image/'));
+
+        if (!fileAttachment) {
+            return message.reply("⚠️ Kamu wajib melampirkan file yang ingin diupload!");
+        }
+
+        const uploadEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle(judul)
+            .addFields(
+                { name: 'Command', value: `\`${cmd}\`` },
+                { name: 'Deskripsi', value: deskripsi },
+                { name: 'Author', value: author },
+                { name: 'Download', value: `[klik untuk download](${fileAttachment.url})` }
+            )
+            .setFooter({ text: `@${message.author.username} | Today` });
+
+        // Jika ada attachment berupa gambar, jadikan preview besar di bawah
+        if (imageAttachment) {
+            uploadEmbed.setImage(imageAttachment.url);
+        }
+
+        await message.channel.send({ embeds: [uploadEmbed] });
+        
+        // Opsional: Hapus pesan command asli agar chat bersih
+        try { await message.delete(); } catch (e) { /* ignore */ }
+        return;
     }
 
     // ----------------------------------------------------
@@ -325,52 +338,6 @@ client.on("messageCreate", async (message) => {
 client.on('interactionCreate', async (interaction) => {
 
     // ==========================================
-    // LOGIKA SLASH COMMAND (/UPLOAD)
-    // ==========================================
-    if (interaction.isChatInputCommand() && interaction.commandName === 'upload') {
-        // Cek Role
-        if (!interaction.member.roles.cache.has(roleUploadId)) {
-            return interaction.reply({ 
-                content: '❌ **Ditolak!** Kamu tidak memiliki role yang diizinkan untuk memposting script.', 
-                ephemeral: true 
-            });
-        }
-
-        const judul = interaction.options.getString('judul');
-        const cmd = interaction.options.getString('cmd');
-        const deskripsi = interaction.options.getString('deskripsi');
-        const author = interaction.options.getString('author');
-        const linkDownload = interaction.options.getString('link_download');
-        const foto = interaction.options.getAttachment('foto');
-
-        // Pastikan lampiran benar-benar file gambar
-        if (!foto.contentType || !foto.contentType.startsWith('image/')) {
-            return interaction.reply({ 
-                content: '❌ **Gagal!** File yang kamu lampirkan di opsi "foto" harus berupa gambar (PNG/JPG/GIF).', 
-                ephemeral: true 
-            });
-        }
-
-        const uploadEmbed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle(judul)
-            .addFields(
-                { name: 'Command', value: `\`${cmd}\`` },
-                { name: 'Deskripsi', value: deskripsi },
-                { name: 'Author', value: author },
-                { name: 'Download', value: `[klik untuk download](${linkDownload})` }
-            )
-            .setImage(foto.url)
-            .setFooter({ text: `@${interaction.user.username} | TATANG COMUNITY` });
-
-        // Kirim embed ke channel tempat command dipanggil
-        await interaction.channel.send({ embeds: [uploadEmbed] });
-        
-        // Balas interaction agar tidak error "Interaction Failed"
-        await interaction.reply({ content: '✅ Postingan script berhasil diupload ke channel ini!', ephemeral: true });
-    }
-
-    // ==========================================
     // LOGIKA PANEL SPAM KEYLOGGER
     // ==========================================
     if (interaction.isButton() && interaction.customId === 'spam_set_webhook') {
@@ -444,6 +411,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
+
     // ==========================================
     // LOGIKA PEMBUATAN CHARACTER STORY
     // ==========================================
@@ -488,7 +456,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const modal = new ModalBuilder().setCustomId('modal_step_1').setTitle(`Detail Karakter (${side}) (1/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap Karakter (IC)').setPlaceholder('Contoh: John Washington...').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap Karakter (IC)').setPlaceholder('Contoh: John Washington, Kenji Tanaka...').setStyle(TextInputStyle.Short).setRequired(true)),
             new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setPlaceholder('Contoh: 1').setStyle(TextInputStyle.Short).setRequired(true)),
             new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setPlaceholder('Contoh: Laki-laki / Perempuan').setStyle(TextInputStyle.Short).setRequired(true)),
             new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setPlaceholder('Contoh: 20 Desember 2006').setStyle(TextInputStyle.Short).setRequired(true)),
@@ -523,9 +491,9 @@ client.on('interactionCreate', async (interaction) => {
 
         const modal = new ModalBuilder().setCustomId('modal_step_2').setTitle(`Detail Cerita (${session.side}) (2/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat/Keahlian Dominan').setPlaceholder('Contoh: Penembak jitu...').setStyle(TextInputStyle.Paragraph).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis (Opsional)').setPlaceholder('Contoh: African-American...').setStyle(TextInputStyle.Short).setRequired(false)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan (Opsional)').setPlaceholder('Contoh: Punya hutang...').setStyle(TextInputStyle.Paragraph).setRequired(false))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat/Keahlian Dominan Karakter').setPlaceholder('Contoh: Penembak jitu, negosiator ulung,...').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis (Opsional)').setPlaceholder('Contoh: African-American, Hispanic,...').setStyle(TextInputStyle.Short).setRequired(false)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan (Opsional)').setPlaceholder('Contoh: Punya hutang, dikhianati geng lama...').setStyle(TextInputStyle.Paragraph).setRequired(false))
         );
 
         await interaction.showModal(modal);
