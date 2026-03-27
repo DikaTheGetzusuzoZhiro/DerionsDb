@@ -140,7 +140,7 @@ function analyzeContent(text) {
 
 client.once('ready', () => {
     console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
-    console.log(`✅ Scanner, AI Chat, Upload, Panel Spam, dan Panel CS siap melayani! (Created by TATANG COMUNITY)`);
+    console.log(`✅ Scanner, AI Chat, Panel Spam, dan Panel CS siap melayani! (Created by TATANG COMUNITY)`);
 });
 
 client.on("messageCreate", async (message) => {
@@ -159,7 +159,7 @@ client.on("messageCreate", async (message) => {
             .addFields(
                 { 
                     name: '🛠️ COMMANDS UTAMA', 
-                    value: `**\`!help\`**\nMenampilkan menu ini.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan Character Story (CS) GTA Roleplay.\n\n**\`!ai [pesan]\`**\n*(Hanya di Channel AI)*. Ngobrol dengan AI.\n\n**\`!upload Judul | Command | Deskripsi | Author\`**\nMembuat panel postingan download script. **Wajib** lampirkan file script, dan boleh tambah lampiran gambar (opsional) sebagai preview.\n\n**\`!panelspam\`**\nMenampilkan panel eksekusi (spam) untuk menghancurkan Webhook/Token Tele pembuat keylogger.`
+                    value: `**\`!help\`**\nMenampilkan menu ini.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan Character Story (CS) GTA Roleplay.\n\n**\`!ai [pesan]\`**\n*(Hanya di Channel AI)*. Ngobrol dengan AI.\n\n**\`!panelspam\`**\nMenampilkan panel eksekusi (spam) untuk menghancurkan Webhook/Token Tele pembuat keylogger.`
                 },
                 {
                     name: '🤖 FITUR OTOMATIS (PASIF)',
@@ -170,48 +170,6 @@ client.on("messageCreate", async (message) => {
             .setTimestamp();
 
         return message.reply({ embeds: [helpEmbed] });
-    }
-
-    // ----------------------------------------------------
-    // 📤 COMMAND: !upload
-    // ----------------------------------------------------
-    if (content.toLowerCase().startsWith('!upload')) {
-        const argsText = content.slice(7).trim();
-        const parts = argsText.split('|').map(p => p.trim());
-        
-        if (parts.length < 4) {
-            return message.reply("⚠️ **Format salah!** Gunakan pemisah tanda `|`.\n**Format:** `!upload Judul | Command | Deskripsi | Author`\n*Jangan lupa lampirkan file scriptnya sebelum dikirim!*");
-        }
-
-        const [judul, cmd, deskripsi, author] = parts;
-        const fileAttachment = message.attachments.first();
-        const imageAttachment = message.attachments.find(a => a.contentType && a.contentType.startsWith('image/'));
-
-        if (!fileAttachment) {
-            return message.reply("⚠️ Kamu wajib melampirkan file yang ingin diupload!");
-        }
-
-        const uploadEmbed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle(judul)
-            .addFields(
-                { name: 'Command', value: `\`${cmd}\`` },
-                { name: 'Deskripsi', value: deskripsi },
-                { name: 'Author', value: author },
-                { name: 'Download', value: `[klik untuk download](${fileAttachment.url})` }
-            )
-            .setFooter({ text: `@${message.author.username} | Today` });
-
-        // Jika ada attachment berupa gambar, jadikan preview besar di bawah
-        if (imageAttachment) {
-            uploadEmbed.setImage(imageAttachment.url);
-        }
-
-        await message.channel.send({ embeds: [uploadEmbed] });
-        
-        // Opsional: Hapus pesan command asli agar chat bersih
-        try { await message.delete(); } catch (e) { /* ignore */ }
-        return;
     }
 
     // ----------------------------------------------------
