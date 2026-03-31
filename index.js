@@ -10,14 +10,27 @@ const {
     StringSelectMenuBuilder, 
     ModalBuilder, 
     TextInputBuilder, 
-    TextInputStyle 
+    TextInputStyle,
+    REST, 
+    Routes, 
+    SlashCommandBuilder,
+    ChannelType
 } = require('discord.js');
 const axios = require('axios');
 const Groq = require('groq-sdk');
 
 // =======================
-// ⚙️ INITIALIZATION
+// ⚙️ INITIALIZATION & ENV
 // =======================
+
+const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+if (!TOKEN || !CLIENT_ID) {
+    console.error("❌ TOKEN / CLIENT_ID belum di set di Environment Variables!");
+    process.exit(1);
+}
 
 const client = new Client({
     intents: [
@@ -28,19 +41,16 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY
-});
+const groq = new Groq({ apiKey: GROQ_API_KEY });
+const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 // =======================
 // 🔒 CONFIGURATION
 // =======================
 
-// Channel IDs
 const scannerChannelId = "1477131305765572618";
 const aiChannelId = "1475164217115021475";
 
-// Scanner Config
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 const detectionPatterns = [
     { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "discord webhook", sev: 4 },
@@ -58,10 +68,9 @@ const detectionPatterns = [
 ];
 const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50 };
 
-// In-Memory Storage
 const csSessions = new Map();
-const spamConfigs = new Map(); // Menyimpan target spam user
-const activeSpams = new Map(); // Menyimpan interval spam yang sedang berjalan
+const spamConfigs = new Map();
+const activeSpams = new Map();
 
 // =======================
 // 🛠️ HELPER FUNCTIONS
@@ -72,33 +81,36 @@ function detectTypo(text) {
 }
 
 async function generateAIResponse(input) {
-    const response = await axios.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-            model: "llama-3.1-8b-instant",
-            messages: [
-                {
-                    role: "system",
-                    content: `Kamu adalah asisten AI. Aturan utamamu:
-1. Jawab pertanyaan pengguna dengan singkat, padat, dan jelas. Jangan memberikan penjelasan panjang yang bertele-tele kecuali diminta.
-2. Jawab semua pertanyaan dengan baik dan informatif layaknya AI pada umumnya.
-3. Sesuaikan sikapmu dengan pengguna: Jika pengguna bertanya dengan sopan, balas dengan ramah. Namun, jika pengguna berkata kasar, toxic, atau menghina, balas dengan kasar, nyolot, dan sarkas.`
-                },
-                {
-                    role: "user",
-                    content: input
+    if (!GROQ_API_KEY) return "API Key Groq belum diatur!";
+    try {
+        const response = await axios.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {
+                model: "llama-3.1-8b-instant",
+                messages: [
+                    {
+                        role: "system",
+                        content: `Kamu adalah asisten AI. Aturan utamamu:
+1. Jawab pertanyaan pengguna dengan singkat, padat, dan jelas.
+2. Jawab semua pertanyaan dengan baik layaknya AI.
+3. Sesuaikan sikapmu: Jika sopan balas ramah, jika toxic balas nyolot dan sarkas.`
+                    },
+                    { role: "user", content: input }
+                ],
+                temperature: 0.7
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${GROQ_API_KEY}`,
+                    "Content-Type": "application/json"
                 }
-            ],
-            temperature: 0.7
-        },
-        {
-            headers: {
-                Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-                "Content-Type": "application/json"
             }
-        }
-    );
-    return response.data.choices[0].message.content;
+        );
+        return response.data.choices[0].message.content;
+    } catch (err) {
+        console.error("Groq Chat Error:", err);
+        return "Aduh, otak AI aku lagi error nih. Coba lagi nanti ya!";
+    }
 }
 
 function analyzeContent(text) {
@@ -117,149 +129,135 @@ function analyzeContent(text) {
     let color = 0x00ff00;
 
     if (percent >= 80) {
-        status = "🔴 BAHAYA TINGGI";
-        color = 0xff0000;
+        status = "🔴 BAHAYA TINGGI"; color = 0xff0000;
     } else if (percent >= 50) {
-        status = "🟠 SANGAT MENCURIGAKAN";
-        color = 0xff8800;
+        status = "🟠 SANGAT MENCURIGAKAN"; color = 0xff8800;
     } else if (percent >= 20) {
-        status = "🟡 MENCURIGAKAN";
-        color = 0xffcc00;
+        status = "🟡 MENCURIGAKAN"; color = 0xffcc00;
     }
 
-    if (matches.length === 0) {
-        matches.push("Tidak ditemukan pola mencurigakan");
-    }
-
+    if (matches.length === 0) matches.push("Tidak ditemukan pola mencurigakan");
     return { percent, status, color, detail: matches.join("\n") };
 }
 
+// Data Pesan Reusable untuk / dan ! commands
+const payloads = {
+    help: () => ({
+        embeds: [new EmbedBuilder()
+            .setColor('#3498db')
+            .setTitle('📚 Pusat Bantuan & Panduan Bot')
+            .setDescription('Daftar lengkap semua perintah yang tersedia (bisa pakai `!` atau `/`):')
+            .addFields(
+                { name: '🛠️ COMMANDS UTAMA', value: `**\`help\`** - Menu ini\n**\`cs\`** - Panel pembuatan Character Story\n**\`panelspam\`** - Panel penghancur Webhook/Tele\n**\`/status\`** - Cek status operator (Hanya Slash Cmd)\n**\`/upload\`** - Upload script (Hanya Slash Cmd)` },
+                { name: '🤖 FITUR OTOMATIS', value: `**🛡️ Lua Scanner** (Di Channel Scanner)\n**🤖 AI Chat** (Di Channel AI, atau gunakan \`!ai [pesan]\`)` }
+            )
+            .setFooter({ text: 'ASISTEN | TATANG COMUNITY' })
+            .setTimestamp()]
+    }),
+    panelspam: () => ({
+        embeds: [new EmbedBuilder()
+            .setTitle('💣 Panel Spam Target Keylogger')
+            .setColor('#e74c3c')
+            .setDescription('**Panel Spam Webhook & Telegram**\nFitur untuk membanjiri target pembuat keylogger.\n\n1. Klik **Set Target**.\n2. Klik **Mulai Spam**.\n3. Klik **Stop Spam** untuk berhenti.')
+            .setFooter({ text: 'Created By TATANG COMUNITY' })],
+        components: [
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('spam_set_webhook').setLabel('Set Webhook').setStyle(ButtonStyle.Secondary).setEmoji('🌐'),
+                new ButtonBuilder().setCustomId('spam_set_tele').setLabel('Set Token Tele').setStyle(ButtonStyle.Secondary).setEmoji('✈️')
+            ),
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('spam_start').setLabel('Mulai Spam').setStyle(ButtonStyle.Success).setEmoji('▶️'),
+                new ButtonBuilder().setCustomId('spam_stop').setLabel('Stop Spam').setStyle(ButtonStyle.Danger).setEmoji('⏹️')
+            )
+        ]
+    }),
+    cs: () => ({
+        embeds: [new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('📝 Panel Pembuatan Character Story')
+            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)**.')
+            .setFooter({ text: 'Created By TATANG COMUNITY' })],
+        components: [
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('start_cs').setLabel('Buat Character Story').setEmoji('📝').setStyle(ButtonStyle.Primary)
+            )
+        ]
+    }),
+    status: () => ({ content: '✅ Semua operator online!' })
+};
+
 // =======================
-// 🚀 BOT EVENTS
+// 📜 SLASH COMMANDS REGISTRATION
 // =======================
 
-client.once('ready', () => {
+const commands = [
+    new SlashCommandBuilder().setName('help').setDescription('Tampilkan menu bantuan bot'),
+    new SlashCommandBuilder().setName('panelspam').setDescription('Tampilkan panel spam target keylogger'),
+    new SlashCommandBuilder().setName('cs').setDescription('Buka panel pembuatan Character Story (CS)'),
+    new SlashCommandBuilder().setName('status').setDescription('Cek status operator bot (Eksklusif Slash Command)'),
+    new SlashCommandBuilder()
+        .setName('upload')
+        .setDescription('Upload script/mod ke channel (Eksklusif Slash Command)')
+        .addChannelOption(opt => opt.setName('channel').setDescription('Pilih channel tujuan').addChannelTypes(ChannelType.GuildText).setRequired(true))
+        .addStringOption(opt => opt.setName('judul').setDescription('Judul Script').setRequired(true))
+        .addStringOption(opt => opt.setName('cmd').setDescription('Command game').setRequired(true))
+        .addStringOption(opt => opt.setName('deskripsi').setDescription('Deskripsi script').setRequired(true))
+        .addStringOption(opt => opt.setName('credit').setDescription('Credit pembuat').setRequired(true))
+        .addStringOption(opt => opt.setName('download').setDescription('Link download').setRequired(true))
+        .addAttachmentOption(opt => opt.setName('gambar').setDescription('Upload gambar (optional)').setRequired(false))
+].map(cmd => cmd.toJSON());
+
+client.once('ready', async () => {
     console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
-    console.log(`✅ Scanner, AI Chat, Panel Spam, dan Panel CS siap melayani! (Created by TATANG COMUNITY)`);
+    try {
+        console.log('🔄 Registering Slash Commands...');
+        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+        console.log('✅ Slash Commands berhasil diregister!');
+        console.log(`✅ Scanner, AI Chat, Panel Spam, dan Panel CS siap melayani!`);
+    } catch (err) {
+        console.error('❌ Gagal register Slash Command:', err);
+    }
 });
+
+// =======================
+// 💬 MESSAGE LISTENER (Prefix & Automations)
+// =======================
 
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
+    const content = message.content.toLowerCase();
 
-    const content = message.content;
+    // PREFIX COMMANDS (!) - Tidak memasukkan !status dan !upload
+    if (content === "!help") return message.reply(payloads.help());
+    if (content === "!panelspam") return message.channel.send(payloads.panelspam());
+    if (content === "!cs") return message.channel.send(payloads.cs());
 
-    // ----------------------------------------------------
-    // 📖 COMMAND: !help
-    // ----------------------------------------------------
-    if (content.toLowerCase() === "!help") {
-        const helpEmbed = new EmbedBuilder()
-            .setColor('#3498db')
-            .setTitle('📚 Pusat Bantuan & Panduan Bot')
-            .setDescription('Daftar lengkap semua perintah (commands) yang tersedia di bot ini:')
-            .addFields(
-                { 
-                    name: '🛠️ COMMANDS UTAMA', 
-                    value: `**\`!help\`**\nMenampilkan menu ini.\n\n**\`!cs\`**\nMembuka Panel Interaktif untuk pembuatan Character Story (CS) GTA Roleplay.\n\n**\`!ai [pesan]\`**\n*(Hanya di Channel AI)*. Ngobrol dengan AI.\n\n**\`!panelspam\`**\nMenampilkan panel eksekusi (spam) untuk menghancurkan Webhook/Token Tele pembuat keylogger.`
-                },
-                {
-                    name: '🤖 FITUR OTOMATIS (PASIF)',
-                    value: `**🛡️ Lua & Script Scanner**\n*(Hanya di Channel Scanner)*. Kirim file lua, otomatis akan di-scan dari kode bahaya.`
-                }
-            )
-            .setFooter({ text: 'ASISTEN | TATANG COMUNITY' })
-            .setTimestamp();
-
-        return message.reply({ embeds: [helpEmbed] });
-    }
-
-    // ----------------------------------------------------
-    // 💣 COMMAND: !panelspam
-    // ----------------------------------------------------
-    if (content.toLowerCase() === '!panelspam') {
-        const embed = new EmbedBuilder()
-            .setTitle('💣 Panel Spam Target Keylogger')
-            .setColor('#e74c3c')
-            .setDescription('**Apa itu Panel Spam?**\nFitur ini khusus dibuat untuk membanjiri (spamming) Webhook Discord atau Token Bot Telegram milik pencuri data (pembuat keylogger) yang terdeteksi oleh sistem scanner. Tujuannya merusak webhook/bot mereka.\n\n**Cara Penggunaan:**\n1. Klik **Set Webhook** atau **Set Tele** lalu masukkan link/token target.\n2. Klik **▶️ Mulai Spam** untuk mengirim spam beruntun secara otomatis di latar belakang.\n3. Klik **⏹️ Stop Spam** untuk menghentikan serangan.')
-            .setFooter({ text: 'Created By TATANG COMUNITY' });
-
-        const row1 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('spam_set_webhook').setLabel('Set Webhook Target').setStyle(ButtonStyle.Secondary).setEmoji('🌐'),
-            new ButtonBuilder().setCustomId('spam_set_tele').setLabel('Set Token Tele').setStyle(ButtonStyle.Secondary).setEmoji('✈️')
-        );
-        const row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('spam_start').setLabel('Mulai Spam').setStyle(ButtonStyle.Success).setEmoji('▶️'),
-            new ButtonBuilder().setCustomId('spam_stop').setLabel('Stop Spam').setStyle(ButtonStyle.Danger).setEmoji('⏹️')
-        );
-
-        return message.channel.send({ embeds: [embed], components: [row1, row2] });
-    }
-
-    // ----------------------------------------------------
-    // 📝 COMMAND: !cs
-    // ----------------------------------------------------
-    if (content.toLowerCase() === '!cs') {
-        const embed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle('📝 Panel Pembuatan Character Story')
-            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)** yang lebih detail dan sesuai keinginanmu.\n\n**Alur Baru yang Lebih Detail**\n1. Pilih Server\n2. Pilih Sisi Cerita (Baik/Jahat)\n3. Isi Detail Lengkap Karakter (Nama, Kultur, Bakat, dll.)')
-            .setFooter({ text: 'Created By TATANG COMUNITY' });
-
-        const button = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('start_cs')
-                .setLabel('Buat Character Story')
-                .setEmoji('📝')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-        return message.channel.send({ embeds: [embed], components: [button] });
-    }
-
-    // ----------------------------------------------------
-    // 🤖 AI CHANNEL LOGIC (Chat)
-    // ----------------------------------------------------
+    // AI CHANNEL LOGIC
     if (message.channel.id === aiChannelId) {
-        try {
-            if (content.startsWith("!ai")) {
-                const userInput = content.slice(3).trim();
-                if (!userInput) return message.reply("Mau nanya apa? Ketik pesannya setelah !ai.");
-                const aiResponse = await generateAIResponse(userInput);
-                return message.reply(aiResponse);
-            }
-
-            if (detectTypo(content)) {
-                const aiResponse = await generateAIResponse("Tanggapi pesan ini yang sepertinya banyak typo: " + content);
-                return message.reply(aiResponse);
-            }
-
-            if (Math.random() < 0.3) {
-                const aiResponse = await generateAIResponse(content);
-                return message.reply(aiResponse);
-            }
-        } catch (err) {
-            console.error("AI Error:", err.response?.data || err.message);
+        if (content.startsWith("!ai")) {
+            const userInput = message.content.slice(3).trim();
+            if (!userInput) return message.reply("Mau nanya apa? Ketik pesannya setelah !ai.");
+            const aiResponse = await generateAIResponse(userInput);
+            return message.reply(aiResponse);
+        }
+        if (detectTypo(content)) {
+            const aiResponse = await generateAIResponse("Tanggapi pesan ini yang sepertinya banyak typo: " + message.content);
+            return message.reply(aiResponse);
+        }
+        if (Math.random() < 0.3) {
+            const aiResponse = await generateAIResponse(message.content);
+            return message.reply(aiResponse);
         }
     }
 
-    // ----------------------------------------------------
-    // 🔎 SCANNER CHANNEL LOGIC
-    // ----------------------------------------------------
-    if (message.channel.id === scannerChannelId) {
-        if (!message.attachments.size) return;
-
+    // SCANNER CHANNEL LOGIC
+    if (message.channel.id === scannerChannelId && message.attachments.size > 0) {
         const attachment = message.attachments.first();
         const fileName = attachment.name.toLowerCase();
         const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
 
         if (!isAllowed) {
-            const warningEmbed = new EmbedBuilder()
-                .setTitle("⚠️ Format File Tidak Didukung")
-                .setColor(0xff0000)
-                .setDescription("Hanya file berisi script yang bisa dianalisis:\n\n• .lua\n• .txt\n• .zip\n• .7z")
-                .setFooter({ text: "Deteksi Keylogger by TATANG COMUNITY" })
-                .setTimestamp();
-
-            return message.reply({ embeds: [warningEmbed] });
+            return message.reply({ embeds: [new EmbedBuilder().setTitle("⚠️ Format File Tidak Didukung").setColor(0xff0000).setDescription("Hanya: .lua, .txt, .zip, .7z").setTimestamp()] });
         }
 
         try {
@@ -290,143 +288,153 @@ client.on("messageCreate", async (message) => {
 });
 
 // =======================
-// 🎛️ INTERACTION HANDLER 
+// 🎛️ INTERACTION HANDLER (Slash Cmds, Buttons, Modals)
 // =======================
 
 client.on('interactionCreate', async (interaction) => {
 
-    // ==========================================
-    // LOGIKA PANEL SPAM KEYLOGGER
-    // ==========================================
-    if (interaction.isButton() && interaction.customId === 'spam_set_webhook') {
-        const modal = new ModalBuilder().setCustomId('modal_set_webhook').setTitle('Set Target Webhook');
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_webhook_url').setLabel('Link Webhook Discord').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_webhook_msg').setLabel('Pesan Spam').setStyle(TextInputStyle.Paragraph).setRequired(true).setValue('WEBHOOK INI TELAH DIHANCURKAN OLEH TATANG COMUNITY ANTI KEYLOGGER!'))
-        );
-        await interaction.showModal(modal);
-    }
+    // --- SLASH COMMANDS ---
+    if (interaction.isChatInputCommand()) {
+        const { commandName } = interaction;
 
-    if (interaction.isButton() && interaction.customId === 'spam_set_tele') {
-        const modal = new ModalBuilder().setCustomId('modal_set_tele').setTitle('Set Target Telegram');
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_token').setLabel('Bot Token Target').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_chatid').setLabel('Chat ID Target').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_msg').setLabel('Pesan Spam').setStyle(TextInputStyle.Paragraph).setRequired(true).setValue('BOT INI TELAH DIHANCURKAN OLEH TATANG COMUNITY ANTI KEYLOGGER!'))
-        );
-        await interaction.showModal(modal);
-    }
+        if (commandName === 'help') return interaction.reply(payloads.help());
+        if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
+        if (commandName === 'cs') return interaction.reply(payloads.cs());
+        if (commandName === 'status') return interaction.reply(payloads.status());
 
-    if (interaction.isModalSubmit() && interaction.customId === 'modal_set_webhook') {
-        const url = interaction.fields.getTextInputValue('in_webhook_url');
-        const msg = interaction.fields.getTextInputValue('in_webhook_msg');
-        spamConfigs.set(interaction.user.id, { type: 'webhook', url, msg });
-        await interaction.reply({ content: '✅ Target Webhook disetel! Sekarang tekan tombol **Mulai Spam**.', ephemeral: true });
-    }
-
-    if (interaction.isModalSubmit() && interaction.customId === 'modal_set_tele') {
-        const token = interaction.fields.getTextInputValue('in_tele_token');
-        const chatId = interaction.fields.getTextInputValue('in_tele_chatid');
-        const msg = interaction.fields.getTextInputValue('in_tele_msg');
-        spamConfigs.set(interaction.user.id, { type: 'telegram', token, chatId, msg });
-        await interaction.reply({ content: '✅ Target Telegram disetel! Sekarang tekan tombol **Mulai Spam**.', ephemeral: true });
-    }
-
-    if (interaction.isButton() && interaction.customId === 'spam_start') {
-        const config = spamConfigs.get(interaction.user.id);
-        if (!config) return interaction.reply({ content: '⚠️ Kamu belum mengatur target! Silakan klik **Set Webhook** atau **Set Tele** dulu.', ephemeral: true });
-        
-        if (activeSpams.has(interaction.user.id)) {
-            return interaction.reply({ content: '⚠️ Spam sudah berjalan! Jika ingin mengganti target, tekan **Stop Spam** terlebih dahulu.', ephemeral: true });
-        }
-
-        await interaction.reply({ content: '🔥 Menginisiasi serangan... Spam berjalan di latar belakang! (Interval: 1 detik)', ephemeral: true });
-
-        // Mulai interval spam (1 pesan per detik agar rate-limit tidak langsung ban IP bot kamu)
-        const interval = setInterval(async () => {
+        if (commandName === 'upload') {
             try {
-                if (config.type === 'webhook') {
-                    await axios.post(config.url, { content: config.msg });
-                } else if (config.type === 'telegram') {
-                    await axios.post(`https://api.telegram.org/bot${config.token}/sendMessage`, { chat_id: config.chatId, text: config.msg });
-                }
-            } catch (e) {
-                // Ignore error (biasanya 429 Too Many Requests atau 404 Not Found jika webhook sudah terhapus)
-            }
-        }, 1000);
+                const channel = interaction.options.getChannel('channel');
+                const jdl = interaction.options.getString('judul');
+                const cmd = interaction.options.getString('cmd');
+                const dsk = interaction.options.getString('deskripsi');
+                const credit = interaction.options.getString('credit');
+                const dwn = interaction.options.getString('download');
+                const img = interaction.options.getAttachment('gambar');
+                const tgl = new Date().toLocaleDateString('id-ID');
 
-        activeSpams.set(interaction.user.id, interval);
+                const embed = new EmbedBuilder()
+                    .setColor('#ffffff')
+                    .setTitle(`**${jdl}**`)
+                    .addFields(
+                        { name: 'Command', value: `\`${cmd}\`` },
+                        { name: 'Deskripsi', value: dsk },
+                        { name: 'Credit', value: credit },
+                        { name: 'Download', value: `[klik untuk download](${dwn})` }
+                    )
+                    .setFooter({ text: `@tatang comunity | ${tgl}` });
+
+                if (img) embed.setImage(img.url);
+
+                await channel.send({ embeds: [embed] });
+                await interaction.reply({ content: `✅ Berhasil dikirim ke ${channel}`, ephemeral: true });
+            } catch (err) {
+                console.error("❌ ERROR Upload:", err);
+                await interaction.reply({ content: "❌ Terjadi error saat upload!", ephemeral: true });
+            }
+        }
+        return;
     }
 
-    if (interaction.isButton() && interaction.customId === 'spam_stop') {
-        const interval = activeSpams.get(interaction.user.id);
-        if (interval) {
-            clearInterval(interval);
-            activeSpams.delete(interaction.user.id);
-            return interaction.reply({ content: '🛑 Serangan spam dihentikan.', ephemeral: true });
-        } else {
-            return interaction.reply({ content: '⚠️ Tidak ada serangan spam yang sedang berjalan atas nama kamu.', ephemeral: true });
+    // --- PANEL SPAM LOGIC ---
+    if (interaction.isButton()) {
+        if (interaction.customId === 'spam_set_webhook') {
+            const modal = new ModalBuilder().setCustomId('modal_set_webhook').setTitle('Set Target Webhook');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_webhook_url').setLabel('Link Webhook Discord').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_webhook_msg').setLabel('Pesan Spam').setStyle(TextInputStyle.Paragraph).setRequired(true).setValue('WEBHOOK INI TELAH DIHANCURKAN OLEH TATANG COMUNITY ANTI KEYLOGGER!'))
+            );
+            return interaction.showModal(modal);
+        }
+
+        if (interaction.customId === 'spam_set_tele') {
+            const modal = new ModalBuilder().setCustomId('modal_set_tele').setTitle('Set Target Telegram');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_token').setLabel('Bot Token Target').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_chatid').setLabel('Chat ID Target').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_msg').setLabel('Pesan Spam').setStyle(TextInputStyle.Paragraph).setRequired(true).setValue('BOT INI TELAH DIHANCURKAN OLEH TATANG COMUNITY ANTI KEYLOGGER!'))
+            );
+            return interaction.showModal(modal);
+        }
+
+        if (interaction.customId === 'spam_start') {
+            const config = spamConfigs.get(interaction.user.id);
+            if (!config) return interaction.reply({ content: '⚠️ Belum mengatur target! Set Webhook/Tele dulu.', ephemeral: true });
+            if (activeSpams.has(interaction.user.id)) return interaction.reply({ content: '⚠️ Spam sudah berjalan! Stop spam dulu.', ephemeral: true });
+
+            await interaction.reply({ content: '🔥 Spam dimulai! Berjalan di latar belakang (1 detik interval).', ephemeral: true });
+            const interval = setInterval(async () => {
+                try {
+                    if (config.type === 'webhook') await axios.post(config.url, { content: config.msg });
+                    else if (config.type === 'telegram') await axios.post(`https://api.telegram.org/bot${config.token}/sendMessage`, { chat_id: config.chatId, text: config.msg });
+                } catch (e) { /* Abaikan error limit */ }
+            }, 1000);
+            activeSpams.set(interaction.user.id, interval);
+        }
+
+        if (interaction.customId === 'spam_stop') {
+            const interval = activeSpams.get(interaction.user.id);
+            if (interval) {
+                clearInterval(interval);
+                activeSpams.delete(interaction.user.id);
+                return interaction.reply({ content: '🛑 Spam dihentikan.', ephemeral: true });
+            }
+            return interaction.reply({ content: '⚠️ Tidak ada spam berjalan.', ephemeral: true });
         }
     }
 
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'modal_set_webhook') {
+            spamConfigs.set(interaction.user.id, { type: 'webhook', url: interaction.fields.getTextInputValue('in_webhook_url'), msg: interaction.fields.getTextInputValue('in_webhook_msg') });
+            return interaction.reply({ content: '✅ Target Webhook disetel! Tekan Mulai Spam.', ephemeral: true });
+        }
+        if (interaction.customId === 'modal_set_tele') {
+            spamConfigs.set(interaction.user.id, { type: 'telegram', token: interaction.fields.getTextInputValue('in_tele_token'), chatId: interaction.fields.getTextInputValue('in_tele_chatid'), msg: interaction.fields.getTextInputValue('in_tele_msg') });
+            return interaction.reply({ content: '✅ Target Telegram disetel! Tekan Mulai Spam.', ephemeral: true });
+        }
+    }
 
-    // ==========================================
-    // LOGIKA PEMBUATAN CHARACTER STORY
-    // ==========================================
+    // --- CS CREATION LOGIC ---
     if (interaction.isButton() && interaction.customId === 'start_cs') {
         const selectMenu = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('select_server')
-                .setPlaceholder('Pilih server tujuan...')
-                .addOptions([
-                    { label: 'SSRP', description: 'Buat CS untuk server State Side RP', value: 'SSRP' },
-                    { label: 'Virtual RP', description: 'Buat CS untuk server Virtual RP', value: 'Virtual RP' },
-                    { label: 'AARP', description: 'Buat CS untuk server Arsy Asia RP', value: 'AARP' },
-                    { label: 'GCRP', description: 'Buat CS untuk server Grand Country RP', value: 'GCRP' },
-                    { label: 'TEN ROLEPLAY', description: 'Buat CS untuk server 10RP', value: 'TEN ROLEPLAY' },
-                    { label: 'CPRP', description: 'Buat CS untuk server Crystal Pride RP', value: 'CPRP' },
-                    { label: 'Relative RP', description: 'Buat CS untuk server Relative RP', value: 'Relative RP' },
-                    { label: 'JGRP', description: 'Buat CS untuk server Jogja Gamers RP', value: 'JGRP' },
-                    { label: 'FMRP', description: 'Buat CS untuk server FAMERLONE RP', value: 'FMRP' }
-                ])
+            new StringSelectMenuBuilder().setCustomId('select_server').setPlaceholder('Pilih server tujuan...').addOptions([
+                { label: 'SSRP', value: 'SSRP' }, { label: 'Virtual RP', value: 'Virtual RP' }, { label: 'AARP', value: 'AARP' },
+                { label: 'GCRP', value: 'GCRP' }, { label: 'TEN ROLEPLAY', value: 'TEN ROLEPLAY' }, { label: 'CPRP', value: 'CPRP' },
+                { label: 'Relative RP', value: 'Relative RP' }, { label: 'JGRP', value: 'JGRP' }, { label: 'FMRP', value: 'FMRP' }
+            ])
         );
-
-        await interaction.reply({ content: 'Pilih server di mana karaktermu akan bermain:', components: [selectMenu], ephemeral: true });
+        return interaction.reply({ content: 'Pilih server karaktermu:', components: [selectMenu], ephemeral: true });
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_server') {
         csSessions.set(interaction.user.id, { server: interaction.values[0] });
-
         const buttons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('side_good').setLabel('Sisi Baik (Goodside)').setEmoji('😇').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('side_bad').setLabel('Sisi Jahat (Badside)').setEmoji('😈').setStyle(ButtonStyle.Danger)
+            new ButtonBuilder().setCustomId('side_good').setLabel('Goodside').setEmoji('😇').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('side_bad').setLabel('Badside').setEmoji('😈').setStyle(ButtonStyle.Danger)
         );
-
-        await interaction.reply({ content: 'Pilih alur cerita untuk karaktermu:', components: [buttons], ephemeral: true });
+        return interaction.reply({ content: 'Pilih alur cerita:', components: [buttons], ephemeral: true });
     }
 
     if (interaction.isButton() && (interaction.customId === 'side_good' || interaction.customId === 'side_bad')) {
         const side = interaction.customId === 'side_good' ? 'Good Side' : 'Bad Side';
-        
         const session = csSessions.get(interaction.user.id) || { server: 'Unknown' };
         session.side = side;
         csSessions.set(interaction.user.id, session);
 
         const modal = new ModalBuilder().setCustomId('modal_step_1').setTitle(`Detail Karakter (${side}) (1/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap Karakter (IC)').setPlaceholder('Contoh: John Washington, Kenji Tanaka...').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setPlaceholder('Contoh: 1').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setPlaceholder('Contoh: Laki-laki / Perempuan').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setPlaceholder('Contoh: 20 Desember 2006').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setPlaceholder('Contoh: Chicago, Illinois').setStyle(TextInputStyle.Short).setRequired(true))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap (IC)').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setStyle(TextInputStyle.Short).setRequired(true))
         );
-
-        await interaction.showModal(modal);
+        return interaction.showModal(modal);
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_1') {
         const session = csSessions.get(interaction.user.id);
-        if (!session) return interaction.reply({ content: 'Sesi pembuatan habis, silakan ketik !cs kembali.', ephemeral: true });
+        if (!session) return interaction.reply({ content: 'Sesi habis, ulangi perintah cs.', ephemeral: true });
 
         session.data = {
             nama: interaction.fields.getTextInputValue('in_nama'),
@@ -436,43 +444,34 @@ client.on('interactionCreate', async (interaction) => {
             city: interaction.fields.getTextInputValue('in_city')
         };
 
-        const button = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('to_step_2').setLabel('Lanjutkan ke Detail Cerita (2/2)').setEmoji('➡️').setStyle(ButtonStyle.Primary)
-        );
-
-        await interaction.reply({ content: '✅ Detail dasar berhasil disimpan. Tekan tombol di bawah untuk melanjutkan pengisian detail cerita.', components: [button], ephemeral: true });
+        const button = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('to_step_2').setLabel('Lanjutkan (2/2)').setEmoji('➡️').setStyle(ButtonStyle.Primary));
+        return interaction.reply({ content: '✅ Detail dasar disimpan. Lanjut isi detail cerita.', components: [button], ephemeral: true });
     }
 
     if (interaction.isButton() && interaction.customId === 'to_step_2') {
         const session = csSessions.get(interaction.user.id);
-        if (!session) return interaction.reply({ content: 'Sesi pembuatan habis, silakan ketik !cs kembali.', ephemeral: true });
+        if (!session) return interaction.reply({ content: 'Sesi habis, ulangi perintah cs.', ephemeral: true });
 
         const modal = new ModalBuilder().setCustomId('modal_step_2').setTitle(`Detail Cerita (${session.side}) (2/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat/Keahlian Dominan Karakter').setPlaceholder('Contoh: Penembak jitu, negosiator ulung,...').setStyle(TextInputStyle.Paragraph).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis (Opsional)').setPlaceholder('Contoh: African-American, Hispanic,...').setStyle(TextInputStyle.Short).setRequired(false)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan (Opsional)').setPlaceholder('Contoh: Punya hutang, dikhianati geng lama...').setStyle(TextInputStyle.Paragraph).setRequired(false))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat Dominan').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis').setStyle(TextInputStyle.Short).setRequired(false)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan').setStyle(TextInputStyle.Paragraph).setRequired(false))
         );
-
-        await interaction.showModal(modal);
+        return interaction.showModal(modal);
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
-        await interaction.deferReply(); 
-
+        await interaction.deferReply();
         const session = csSessions.get(interaction.user.id);
-        if (!session || !session.data) {
-            return interaction.editReply({ content: '❌ Terjadi kesalahan sesi. Silakan ulangi !cs' });
-        }
+        if (!session || !session.data) return interaction.editReply({ content: '❌ Terjadi kesalahan sesi.' });
 
         const bakat = interaction.fields.getTextInputValue('in_bakat');
         const kultur = interaction.fields.getTextInputValue('in_kultur') || '-';
         const ekstra = interaction.fields.getTextInputValue('in_ekstra') || '-';
 
         try {
-            const promptContext = `Tuliskan Character Story GTA Roleplay untuk karakter bernama ${session.data.nama} (Gender: ${session.data.gender}). Tanggal Lahir: ${session.data.dob}, Asal Kota: ${session.data.city}. 
-            Sisi Cerita: ${session.side}, Bakat Dominan: ${bakat}, Kultur/Etnis: ${kultur}, Detail Tambahan: ${ekstra}.
-            Buat cerita masa lalunya dalam 3 paragraf panjang bahasa Indonesia formal bergaya naratif (novel). Langsung berikan ceritanya tanpa kata pengantar apapun.`;
+            const promptContext = `Tuliskan Character Story GTA Roleplay untuk karakter bernama ${session.data.nama} (Gender: ${session.data.gender}). Tanggal Lahir: ${session.data.dob}, Asal Kota: ${session.data.city}. Sisi Cerita: ${session.side}, Bakat: ${bakat}, Kultur: ${kultur}, Tambahan: ${ekstra}. Buat 3 paragraf bahasa Indonesia formal naratif. Langsung berikan ceritanya tanpa kata pengantar apapun.`;
 
             const chatCompletion = await groq.chat.completions.create({
                 messages: [{ role: 'user', content: promptContext }],
@@ -494,13 +493,13 @@ client.on('interactionCreate', async (interaction) => {
                 .setFooter({ text: 'Created By TATANG COMUNITY' }); 
 
             await interaction.editReply({ embeds: [finalEmbed] });
-            
             csSessions.delete(interaction.user.id);
         } catch (error) {
             console.error('Groq AI Error:', error);
-            await interaction.editReply({ content: '❌ Gagal membuat cerita karena server AI sedang sibuk. Coba beberapa saat lagi.' });
+            await interaction.editReply({ content: '❌ Gagal membuat cerita karena server AI sedang sibuk.' });
         }
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// LOGIN
+client.login(TOKEN);
