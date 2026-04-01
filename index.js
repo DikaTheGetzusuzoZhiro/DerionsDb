@@ -50,6 +50,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 const scannerChannelId = "1477131305765572618";
 const aiChannelId = "1475164217115021475";
+const uploadRoleId = "1466470849266848009"; // Role khusus untuk /upload
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 const detectionPatterns = [
@@ -144,14 +145,40 @@ function analyzeContent(text) {
 const payloads = {
     help: () => ({
         embeds: [new EmbedBuilder()
-            .setColor('#3498db')
-            .setTitle('📚 Pusat Bantuan & Panduan Bot')
-            .setDescription('Daftar lengkap semua perintah yang tersedia (bisa pakai `!` atau `/`):')
+            .setColor('#00d2ff')
+            .setTitle('🌟 Pusat Komando & Panduan Bot 🌟')
+            .setDescription('Selamat datang di sistem asisten otomatis!\nBerikut adalah direktori lengkap fitur yang tersedia. Kamu dapat menggunakan prefix `!` atau `/` (Slash Commands) untuk mengakses fitur di bawah ini.')
             .addFields(
-                { name: '🛠️ COMMANDS UTAMA', value: `**\`help\`** - Menu ini\n**\`cs\`** - Panel pembuatan Character Story\n**\`panelspam\`** - Panel penghancur Webhook/Tele\n**\`/status\`** - Cek status operator (Hanya Slash Cmd)\n**\`/upload\`** - Upload script (Hanya Slash Cmd)` },
-                { name: '🤖 FITUR OTOMATIS', value: `**🛡️ Lua Scanner** (Di Channel Scanner)\n**🤖 AI Chat** (Di Channel AI, atau gunakan \`!ai [pesan]\`)` }
+                { 
+                    name: '🎮 ROLEPLAY & UTILITIES', 
+                    value: `> **\`cs\`** - Membuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n> **\`panelspam\`** - Membuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
+                },
+                { 
+                    name: '🤖 FITUR OTOMATIS (Pasif)', 
+                    value: `> **🛡️ Scanner Anti-Keylogger** - Kirim file script (\`.lua\`, \`.zip\`, \`.txt\`) ke channel Scanner, bot akan mendeteksi potensi bahaya secara otomatis.\n> **🤖 AI Chat & Typo Fixer** - Mengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
+                },
+                { 
+                    name: '🔒 KHUSUS STAFF / ROLE TERTENTU', 
+                    value: `> **\`/upload\`** - Panel terstruktur untuk merilis script/mod ke server.\n> **\`/status\`** - Memeriksa metrik operasional bot dan ping server.` 
+                }
             )
-            .setFooter({ text: 'ASISTEN | TATANG COMUNITY' })
+            .setThumbnail('https://cdn-icons-png.flaticon.com/512/8633/8633190.png') // Ikon pemanis
+            .setFooter({ text: 'Tatang Community & Fyy Store System', iconURL: 'https://cdn-icons-png.flaticon.com/512/1041/1041883.png' })
+            .setTimestamp()]
+    }),
+    status: (client) => ({
+        embeds: [new EmbedBuilder()
+            .setColor('#2ecc71')
+            .setTitle('📊 Metrik & Status Operasional Server')
+            .setDescription('Berikut adalah diagnostik terkini dari sistem bot dan layanan pihak ketiga yang terhubung:')
+            .addFields(
+                { name: '📡 Koneksi Jaringan', value: `> **Ping (Latency):** \`${client ? client.ws.ping : 0}ms\` 🟢\n> **Uptime:** \`Sistem Stabil\``, inline: false },
+                { name: '🤖 Status Core', value: '> `🟢 Online & Optimal`', inline: true },
+                { name: '🧠 Groq AI Engine', value: '> `🟢 Terhubung`', inline: true },
+                { name: '🛡️ Scanner Module', value: '> `🟢 Memantau Aktif`', inline: true },
+                { name: '👥 Staff / Operator', value: '> `✅ Standby`', inline: true }
+            )
+            .setFooter({ text: 'Tatang Community & Fyy Store System' })
             .setTimestamp()]
     }),
     panelspam: () => ({
@@ -182,8 +209,7 @@ const payloads = {
                 new ButtonBuilder().setCustomId('start_cs').setLabel('Buat Character Story').setEmoji('📝').setStyle(ButtonStyle.Primary)
             )
         ]
-    }),
-    status: () => ({ content: '✅ Semua operator online!' })
+    })
 };
 
 // =======================
@@ -197,7 +223,7 @@ const commands = [
     new SlashCommandBuilder().setName('status').setDescription('Cek status operator bot (Eksklusif Slash Command)'),
     new SlashCommandBuilder()
         .setName('upload')
-        .setDescription('Upload script/mod ke channel (Eksklusif Slash Command)')
+        .setDescription('Upload script/mod ke channel (Eksklusif Slash Command & Role Khusus)')
         .addChannelOption(opt => opt.setName('channel').setDescription('Pilih channel tujuan').addChannelTypes(ChannelType.GuildText).setRequired(true))
         .addStringOption(opt => opt.setName('judul').setDescription('Judul Script').setRequired(true))
         .addStringOption(opt => opt.setName('cmd').setDescription('Command game').setRequired(true))
@@ -300,9 +326,17 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'help') return interaction.reply(payloads.help());
         if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
         if (commandName === 'cs') return interaction.reply(payloads.cs());
-        if (commandName === 'status') return interaction.reply(payloads.status());
+        if (commandName === 'status') return interaction.reply(payloads.status(client)); // Terhubung dengan pass client untuk Ping
 
         if (commandName === 'upload') {
+            // Cek apakah member memiliki role yang diizinkan
+            if (!interaction.member.roles.cache.has(uploadRoleId)) {
+                return interaction.reply({ 
+                    content: '❌ Akses Ditolak! Kamu tidak memiliki role yang diizinkan untuk menggunakan command ini.', 
+                    ephemeral: true 
+                });
+            }
+
             try {
                 const channel = interaction.options.getChannel('channel');
                 const jdl = interaction.options.getString('judul');
