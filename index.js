@@ -151,11 +151,11 @@ const payloads = {
             .addFields(
                 { 
                     name: '🎮 ROLEPLAY & UTILITIES', 
-                    value: `> **\`cs\`** - Membuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n> **\`panelspam\`** - Membuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
+                    value: `> **\`!cs\`** - Membuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n> **\`!panelspam\`** - Membuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
                 },
                 { 
                     name: '🤖 FITUR OTOMATIS (Pasif)', 
-                    value: `> **🛡️ Scanner Anti-Keylogger** - Kirim file script (\`.lua\`, \`.zip\`, \`.txt\`) ke channel Scanner, bot akan mendeteksi potensi bahaya secara otomatis.\n> **🤖 AI Chat & Typo Fixer** - Mengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
+                    value: `> **🛡️ Scanner Anti-Keylogger** - Kirim file script ke channel cek keylogger, bot akan mendeteksi potensi bahaya secara otomatis.\n> **🤖 AI Chat** - Mengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
                 },
                 { 
                     name: '🔒 KHUSUS STAFF / ROLE TERTENTU', 
