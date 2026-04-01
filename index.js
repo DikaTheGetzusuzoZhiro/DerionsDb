@@ -163,7 +163,7 @@ const payloads = {
                 }
             )
             .setThumbnail('https://cdn-icons-png.flaticon.com/512/8633/8633190.png') // Ikon pemanis
-            .setFooter({ text: 'Tatang Community & Fyy Store System', iconURL: 'https://cdn-icons-png.flaticon.com/512/1041/1041883.png' })
+            .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' }) // Icon diubah ke logo community
             .setTimestamp()]
     }),
     status: (client) => ({
@@ -178,7 +178,7 @@ const payloads = {
                 { name: '🛡️ Scanner Module', value: '> `🟢 Memantau Aktif`', inline: true },
                 { name: '👥 Staff / Operator', value: '> `✅ Standby`', inline: true }
             )
-            .setFooter({ text: 'Tatang Community & Fyy Store System' })
+            .setFooter({ text: 'Tatang Community System' })
             .setTimestamp()]
     }),
     panelspam: () => ({
