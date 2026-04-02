@@ -147,23 +147,23 @@ const payloads = {
         embeds: [new EmbedBuilder()
             .setColor('#00d2ff')
             .setTitle('🌟 Pusat Komando & Panduan Bot 🌟')
-            .setDescription('Selamat datang di sistem asisten otomatis!\nBerikut adalah direktori lengkap fitur yang tersedia. Kamu dapat menggunakan prefix `!` atau `/` (Slash Commands) untuk mengakses fitur di bawah ini.')
+            .setDescription('Selamat datang di sistem asisten otomatis!\nBerikut adalah direktori lengkap fitur yang tersedia. Kamu dapat menggunakan prefix `!` atau `/` (Slash Commands).\n')
             .addFields(
                 { 
                     name: '🎮 ROLEPLAY & UTILITIES', 
-                    value: `> **\`!cs\`** - Membuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n> **\`!panelspam\`** - Membuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
+                    value: `**> \`!cs\` / \`/cs\`**\nMembuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n\n**> \`!panelspam\` / \`/panelspam\`**\nMembuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
                 },
                 { 
                     name: '🤖 FITUR OTOMATIS (Pasif)', 
-                    value: `> **🛡️ Scanner Anti-Keylogger** - Kirim file script ke channel cek keylogger, bot akan mendeteksi potensi bahaya secara otomatis.\n> **🤖 AI Chat** - Mengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
+                    value: `**> 🛡️ Cek Keylogger Otomatis**\nKirim file script (\`.lua\`, \`.zip\`, \`.txt\`) ke channel Scanner. Bot akan langsung membedah dan mendeteksi script berbahaya / keylogger secara otomatis!\n\n**> 🤖 AI Chat & Typo Fixer**\nMengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
                 },
                 { 
                     name: '🔒 KHUSUS STAFF / ROLE TERTENTU', 
-                    value: `> **\`/upload\`** - Panel terstruktur untuk merilis script/mod ke server.\n> **\`/status\`** - Memeriksa metrik operasional bot dan ping server.` 
+                    value: `**> \`/upload\`**\nPanel terstruktur untuk merilis script/mod ke server.\n\n**> \`/status\`**\nMemeriksa metrik operasional bot dan ping server.` 
                 }
             )
-            .setThumbnail('https://cdn-icons-png.flaticon.com/512/8633/8633190.png') // Ikon pemanis
-            .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' }) // Icon diubah ke logo community
+            // Gambar/icon mic dihilangkan biar lebih bersih
+            .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' })
             .setTimestamp()]
     }),
     status: (client) => ({
@@ -202,7 +202,7 @@ const payloads = {
         embeds: [new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('📝 Panel Pembuatan Character Story')
-            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)**.')
+            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)**.\n\n**⚠️ Persiapkan Data Karaktermu:**\n- **Nama IC** *(Contoh: John Doe, Udin Petot)*\n- **Level IC** *(Contoh: 3, 5, 10)*\n- **Kota Asal** *(Contoh: Los Santos, Las Venturas, San Fierro)*\n- **Tanggal Lahir & Jenis Kelamin**\n- **Bakat & Kultur Cerita**')
             .setFooter({ text: 'Created By TATANG COMUNITY' })],
         components: [
             new ActionRowBuilder().addComponents(
@@ -253,7 +253,7 @@ client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
     const content = message.content.toLowerCase();
 
-    // PREFIX COMMANDS (!) - Tidak memasukkan !status dan !upload
+    // PREFIX COMMANDS (!)
     if (content === "!help") return message.reply(payloads.help());
     if (content === "!panelspam") return message.channel.send(payloads.panelspam());
     if (content === "!cs") return message.channel.send(payloads.cs());
@@ -326,10 +326,9 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'help') return interaction.reply(payloads.help());
         if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
         if (commandName === 'cs') return interaction.reply(payloads.cs());
-        if (commandName === 'status') return interaction.reply(payloads.status(client)); // Terhubung dengan pass client untuk Ping
+        if (commandName === 'status') return interaction.reply(payloads.status(client));
 
         if (commandName === 'upload') {
-            // Cek apakah member memiliki role yang diizinkan
             if (!interaction.member.roles.cache.has(uploadRoleId)) {
                 return interaction.reply({ 
                     content: '❌ Akses Ditolak! Kamu tidak memiliki role yang diizinkan untuk menggunakan command ini.', 
@@ -457,11 +456,11 @@ client.on('interactionCreate', async (interaction) => {
 
         const modal = new ModalBuilder().setCustomId('modal_step_1').setTitle(`Detail Karakter (${side}) (1/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap (IC)').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setStyle(TextInputStyle.Short).setRequired(true))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap (IC)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: John Doe')),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: 5')),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: Laki-laki / Perempuan')),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: 12 Mei 1998')),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: Los Santos'))
         );
         return interaction.showModal(modal);
     }
@@ -488,15 +487,17 @@ client.on('interactionCreate', async (interaction) => {
 
         const modal = new ModalBuilder().setCustomId('modal_step_2').setTitle(`Detail Cerita (${session.side}) (2/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat Dominan').setStyle(TextInputStyle.Paragraph).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis').setStyle(TextInputStyle.Short).setRequired(false)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan').setStyle(TextInputStyle.Paragraph).setRequired(false))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat Dominan').setStyle(TextInputStyle.Paragraph).setRequired(true).setPlaceholder('Contoh: Jago menembak, pintar negosiasi')),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Contoh: African-American, Hispanic')),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan').setStyle(TextInputStyle.Paragraph).setRequired(false).setPlaceholder('Contoh: Punya dendam masa lalu di kota asal'))
         );
         return interaction.showModal(modal);
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
-        await interaction.deferReply();
+        // Hapus { ephemeral: true } atau biarkan kosong supaya pesan jadi publik dan bot bisa nge-tag!
+        await interaction.deferReply(); 
+        
         const session = csSessions.get(interaction.user.id);
         if (!session || !session.data) return interaction.editReply({ content: '❌ Terjadi kesalahan sesi.' });
 
@@ -522,11 +523,16 @@ client.on('interactionCreate', async (interaction) => {
                 .addFields(
                     { name: '🌐 Server', value: session.server, inline: true },
                     { name: '🎭 Sisi Cerita', value: session.side, inline: true },
-                    { name: '📈 Level', value: session.data.level, inline: true }
+                    { name: '📈 Level', value: session.data.level, inline: true },
+                    { name: '🏙️ Asal Kota', value: session.data.city, inline: true }
                 )
                 .setFooter({ text: 'Created By TATANG COMUNITY' }); 
 
-            await interaction.editReply({ embeds: [finalEmbed] });
+            // Bot otomatis nge-tag usernya waktu kasih hasil akhir
+            await interaction.editReply({ 
+                content: `🎉 Yeay! Character Story berhasil dibuat untuk <@${interaction.user.id}>!`, 
+                embeds: [finalEmbed] 
+            });
             csSessions.delete(interaction.user.id);
         } catch (error) {
             console.error('Groq AI Error:', error);
