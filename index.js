@@ -155,7 +155,7 @@ const payloads = {
                 },
                 { 
                     name: '🤖 FITUR OTOMATIS (Pasif)', 
-                    value: `**> 🛡️ Cek Keylogger Otomatis**\nKirim file script (\`.lua\`, \`.zip\`, \`.txt\`) ke channel Scanner. Bot akan langsung membedah dan mendeteksi script berbahaya / keylogger secara otomatis!\n\n**> 🤖 AI Chat & Typo Fixer**\nMengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
+                    value: `**> 🛡️ Cek Keylogger Otomatis**\nKirim file script ke channel Scanner. Bot akan langsung membedah dan mendeteksi script berbahaya / keylogger secara otomatis!\n\n**> 🤖 AI Chat & Typo Fixer**\nMengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
                 },
                 { 
                     name: '🔒 KHUSUS STAFF / ROLE TERTENTU', 
