@@ -116,7 +116,22 @@ async function generateAIResponse(input) {
 
 function analyzeContent(text) {
     const matches = [];
+    const extractedData = []; // Array untuk menampung link yang terekstrak
     let rawScore = 0;
+
+    // --- EKSTRAKSI WEBHOOK & TELEGRAM ---
+    const webhookRegex = /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi;
+    const teleRegex = /([0-9]{8,10}:[a-zA-Z0-9_-]{35})/gi; // Format Token Bot Telegram
+
+    const foundWebhooks = text.match(webhookRegex);
+    if (foundWebhooks) extractedData.push(...foundWebhooks);
+
+    const foundTeleTokens = text.match(teleRegex);
+    if (foundTeleTokens) {
+        // Format ulang agar lebih jelas bahwa itu telegram token
+        foundTeleTokens.forEach(token => extractedData.push(`Telegram Token: ${token}`));
+    }
+    // ------------------------------------
 
     detectionPatterns.forEach(p => {
         if (p.regex.test(text)) {
@@ -138,7 +153,7 @@ function analyzeContent(text) {
     }
 
     if (matches.length === 0) matches.push("Tidak ditemukan pola mencurigakan");
-    return { percent, status, color, detail: matches.join("\n") };
+    return { percent, status, color, detail: matches.join("\n"), extractedData };
 }
 
 // Data Pesan Reusable untuk / dan ! commands
@@ -162,7 +177,6 @@ const payloads = {
                     value: `**> \`/upload\`**\nPanel terstruktur untuk merilis script/mod ke server.\n\n**> \`/status\`**\nMemeriksa metrik operasional bot dan ping server.` 
                 }
             )
-            // Gambar/icon mic dihilangkan biar lebih bersih
             .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' })
             .setTimestamp()]
     }),
@@ -306,6 +320,16 @@ client.on("messageCreate", async (message) => {
                 .setTimestamp();
 
             await message.reply({ embeds: [embed] });
+
+            // --- KIRIM PESAN BARU JIKA ADA LINK/TOKEN YANG TERDETEKSI ---
+            if (result.extractedData && result.extractedData.length > 0) {
+                // Gunakan Set untuk menghapus duplikat
+                const uniqueLinks = [...new Set(result.extractedData)].join("\n");
+                
+                await message.channel.send(`🚨 **PERINGATAN! DITEMUKAN TARGET BERBAHAYA!** 🚨\nBerikut adalah Webhook/Token Telegram yang berhasil diekstrak dari file tersebut:\n\n\`\`\`txt\n${uniqueLinks}\n\`\`\`\n*Segera gunakan command \`/panelspam\` atau \`!panelspam\` untuk menyerang target di atas!*`);
+            }
+            // -----------------------------------------------------------
+
         } catch (error) {
             console.error("Scanner Error:", error);
             message.reply("❌ Gagal membaca atau menganalisis file.");
@@ -495,7 +519,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
-        // Hapus { ephemeral: true } atau biarkan kosong supaya pesan jadi publik dan bot bisa nge-tag!
         await interaction.deferReply(); 
         
         const session = csSessions.get(interaction.user.id);
@@ -528,7 +551,6 @@ client.on('interactionCreate', async (interaction) => {
                 )
                 .setFooter({ text: 'Created By TATANG COMUNITY' }); 
 
-            // Bot otomatis nge-tag usernya waktu kasih hasil akhir
             await interaction.editReply({ 
                 content: `🎉 Yeay! Character Story berhasil dibuat untuk <@${interaction.user.id}>!`, 
                 embeds: [finalEmbed] 
