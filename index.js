@@ -52,21 +52,39 @@ const scannerChannelId = "1477131305765572618";
 const aiChannelId = "1475164217115021475";
 const uploadRoleId = "1466470849266848009"; // Role khusus untuk /upload
 
-const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
+// Menambahkan .rar ke dalam ekstensi yang diizinkan
+const allowedExtensions = [".lua", ".txt", ".zip", ".7z", ".rar"];
+
+// Menambahkan pola deteksi yang lebih spesifik dan mematikan
 const detectionPatterns = [
-    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "discord webhook", sev: 4 },
-    { regex: /api\.telegram\.org\/bot/i, desc: "telegram bot api", sev: 4 },
-    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "command execution", sev: 4 },
-    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "dynamic code execution", sev: 4 },
-    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection", sev: 3 },
-    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "obfuscation", sev: 3 },
-    { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "socket network", sev: 3 },
-    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "base64 encoded blob", sev: 3 },
-    { regex: /\b(password|username)\b\s*[:=]/i, desc: "credential variable", sev: 2 },
-    { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "samp player function", sev: 2 },
-    { regex: /loadstring/i, desc: "loadstring keyword", sev: 1 },
-    { regex: /password/i, desc: "password keyword", sev: 1 }
+    // BAHAYA BESAR (Level 4 - 50 point)
+    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Discord Webhook", sev: 4 },
+    { regex: /api\.telegram\.org\/bot/i, desc: "Telegram Bot API", sev: 4 },
+    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "Command Execution", sev: 4 },
+    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "Dynamic Code Execution", sev: 4 },
+    { regex: /downloadUrlToFile/i, desc: "Malware Downloader", sev: 4 },
+    { regex: /ffi\.C\.system/i, desc: "FFI System Command", sev: 4 },
+    { regex: /ffi\.load\s*\(\s*['"](?:wininet|ws2_32)['"]\s*\)/i, desc: "FFI Network DLL", sev: 4 },
+
+    // SANGAT MENCURIGAKAN (Level 3 - 30 point)
+    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec Protection", sev: 3 },
+    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "Obfuscation", sev: 3 },
+    { regex: /require\s*\(\s*['"]socket(?:\.http)?['"]\s*\)/i, desc: "Socket/HTTP Network", sev: 3 },
+    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "Base64 Encoded Blob", sev: 3 },
+    { regex: /os\.remove|os\.rename/i, desc: "OS File Manipulation", sev: 3 },
+    { regex: /getenv\s*\(\s*['"]APPDATA['"]\s*\)/i, desc: "Access AppData", sev: 3 },
+
+    // MENCURIGAKAN (Level 2 - 18 point)
+    { regex: /\b(password|username|token|hwid|ip)\b\s*[:=]/i, desc: "Credential Variable", sev: 2 },
+    { regex: /\bsampGetPlayer(?:Nickname|Name|Ip)\b/i, desc: "SAMP Player Data Grabber", sev: 2 },
+    { regex: /getClipboardText/i, desc: "Clipboard Reader", sev: 2 },
+    { regex: /io\.open/i, desc: "File I/O Writer", sev: 2 },
+
+    // PERINGATAN (Level 1 - 8 point)
+    { regex: /loadstring/i, desc: "Loadstring Keyword", sev: 1 },
+    { regex: /password/i, desc: "Password Keyword", sev: 1 }
 ];
+
 const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50 };
 
 const csSessions = new Map();
@@ -114,23 +132,69 @@ async function generateAIResponse(input) {
     }
 }
 
+// Fungsi AI Khusus untuk mendeteksi baris berbahaya
+async function analyzeCodeWithAI(code, fileName) {
+    if (!GROQ_API_KEY) return "AI Scanner belum siap (API Key hilang).";
+    
+    // Potong kode jika terlalu panjang & tambahkan nomor baris agar AI tidak halusinasi
+    const numberedCode = code.split('\n')
+        .map((line, i) => `${i + 1}| ${line}`)
+        .slice(0, 1500) // Batasi 1500 baris untuk limit token
+        .join('\n');
+
+    const promptContext = `Tolong analisis kode Lua berikut. Carikan baris yang mengandung fungsi berbahaya atau pencurian data seperti webhook, API telegram, socket.http, exec, os.execute, atau variabel username/password.
+    
+    Berikan output HANYA berupa list temuan baris kode dengan format persis seperti ini:
+    - \`[kata kunci]\` di \`${fileName}\` (L[nomor baris])
+    
+    Contoh:
+    - \`username\` di \`namasc.lua\` (L7)
+    - \`socket.http\` di \`namasc.lua\` (L110)
+    
+    Jika kodenya murni aman dan tidak ada satu pun yang mencurigakan, balas HANYA dengan kata "Aman".
+    
+    Kode:
+    ${numberedCode}`;
+
+    try {
+        const response = await axios.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {
+                model: "llama-3.3-70b-versatile",
+                messages: [{ role: "user", content: promptContext }],
+                temperature: 0.1
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${GROQ_API_KEY}`,
+                    "Content-Type": "application/json"
+                }
+            }
+        );
+        return response.data.choices[0].message.content;
+    } catch (err) {
+        console.error("Groq Code Scanner Error:", err);
+        return "Gagal melakukan analisis baris AI.";
+    }
+}
+
 function analyzeContent(text) {
     const matches = [];
     let rawScore = 0;
 
     detectionPatterns.forEach(p => {
         if (p.regex.test(text)) {
-            matches.push(`• ${p.desc} (level ${p.sev})`);
+            matches.push(`• ${p.desc} (Level ${p.sev})`);
             rawScore += severityWeight[p.sev];
         }
     });
 
     let percent = Math.min(100, rawScore);
-    let status = "🟢 Aman";
+    let status = "🟢 AMAN";
     let color = 0x00ff00;
 
     if (percent >= 80) {
-        status = "🔴 BAHAYA TINGGI"; color = 0xff0000;
+        status = "🔴 BAHAYA BESAR"; color = 0xff0000;
     } else if (percent >= 50) {
         status = "🟠 SANGAT MENCURIGAKAN"; color = 0xff8800;
     } else if (percent >= 20) {
@@ -162,7 +226,6 @@ const payloads = {
                     value: `**> \`/upload\`**\nPanel terstruktur untuk merilis script/mod ke server.\n\n**> \`/status\`**\nMemeriksa metrik operasional bot dan ping server.` 
                 }
             )
-            // Gambar/icon mic dihilangkan biar lebih bersih
             .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' })
             .setTimestamp()]
     }),
@@ -283,32 +346,55 @@ client.on("messageCreate", async (message) => {
         const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
 
         if (!isAllowed) {
-            return message.reply({ embeds: [new EmbedBuilder().setTitle("⚠️ Format File Tidak Didukung").setColor(0xff0000).setDescription("Hanya: .lua, .txt, .zip, .7z").setTimestamp()] });
+            return message.reply({ embeds: [new EmbedBuilder().setTitle("⚠️ Format File Tidak Didukung").setColor(0xff0000).setDescription(`Hanya: ${allowedExtensions.join(", ")}`).setTimestamp()] });
         }
 
         try {
+            const processingMsg = await message.reply("⏳ Sedang membedah file dan memeriksa baris kode dengan AI...");
+            
             const response = await axios.get(attachment.url, { responseType: "arraybuffer" });
             const contentFile = Buffer.from(response.data).toString("utf8");
+            
+            // Regex Analyzer
             const result = analyzeContent(contentFile);
+            
+            // Ekstraksi Link Webhook / Telegram
+            const webhookRegex = /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[^\s'"]+/gi;
+            const teleRegex = /https?:\/\/api\.telegram\.org\/bot[^\s'"]+/gi;
+            const extractedWebhooks = contentFile.match(webhookRegex) || [];
+            const extractedTeles = contentFile.match(teleRegex) || [];
+            const targetLinks = [...new Set([...extractedWebhooks, ...extractedTeles])];
+
+            // AI Line Analyzer
+            const aiLines = await analyzeCodeWithAI(contentFile, attachment.name);
 
             const embed = new EmbedBuilder()
                 .setTitle("🛡️ Hasil Analisis Keamanan")
                 .setColor(result.color)
                 .addFields(
-                    { name: "👤 Pengguna", value: `${message.author}` },
-                    { name: "📄 Nama File", value: attachment.name },
-                    { name: "📦 Ukuran File", value: `${(attachment.size / 1024).toFixed(2)} KB` },
+                    { name: "👤 Pengguna", value: `${message.author}`, inline: true },
+                    { name: "📄 Nama File", value: attachment.name, inline: true },
+                    { name: "📦 Ukuran", value: `${(attachment.size / 1024).toFixed(2)} KB`, inline: true },
                     { name: "📊 Status Keamanan", value: result.status },
                     { name: "⚠️ Tingkat Risiko", value: `${result.percent}%` },
-                    { name: "🔎 Detail Deteksi", value: result.detail }
+                    { name: "🔎 Deteksi Sistem", value: result.detail },
+                    { name: "🤖 Deteksi Baris AI", value: aiLines }
                 )
-                .setFooter({ text: "Deteksi Keylogger by TATANG COMUNITY" })
+                .setFooter({ text: "Deteksi Anti-Keylogger by TATANG COMUNITY" })
                 .setTimestamp();
 
-            await message.reply({ embeds: [embed] });
+            await processingMsg.edit({ content: "✅ Analisis selesai!", embeds: [embed] });
+
+            // Jika ada link webhook atau tele, kirim pesan terpisah agar bisa di copy paste untuk spam
+            if (targetLinks.length > 0) {
+                await message.channel.send({
+                    content: `🚨 **TARGET DITEMUKAN!**\nSistem menemukan link yang mengarah ke pelaku. Salin link di bawah ini dan gunakan di \`!panelspam\` untuk menghancurkan mereka:\n\n${targetLinks.map(link => `\`${link}\``).join('\n')}`
+                });
+            }
+
         } catch (error) {
             console.error("Scanner Error:", error);
-            message.reply("❌ Gagal membaca atau menganalisis file.");
+            message.reply("❌ Gagal membaca atau menganalisis file. File mungkin dienkripsi terlalu rumit atau korup.");
         }
     }
 });
