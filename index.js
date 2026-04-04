@@ -1,4 +1,4 @@
-require('dotenv').config();
+Require('dotenv').config();
 const { 
     Client, 
     GatewayIntentBits, 
@@ -50,9 +50,42 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 const scannerChannelId = "1477131305765572618";
 const aiChannelId = "1475164217115021475";
-const uploadRoleId = "1466470849266848009"; 
+const uploadRoleId = "1466470849266848009"; // Role khusus untuk /upload
 
+// Menambahkan .rar ke dalam ekstensi yang diizinkan
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z", ".rar"];
+
+// Menambahkan pola deteksi yang lebih spesifik dan mematikan
+const detectionPatterns = [
+    // BAHAYA BESAR (Level 4 - 50 point)
+    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Discord Webhook", sev: 4 },
+    { regex: /api\.telegram\.org\/bot/i, desc: "Telegram Bot API", sev: 4 },
+    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "Command Execution", sev: 4 },
+    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "Dynamic Code Execution", sev: 4 },
+    { regex: /downloadUrlToFile/i, desc: "Malware Downloader", sev: 4 },
+    { regex: /ffi\.C\.system/i, desc: "FFI System Command", sev: 4 },
+    { regex: /ffi\.load\s*\(\s*['"](?:wininet|ws2_32)['"]\s*\)/i, desc: "FFI Network DLL", sev: 4 },
+
+    // SANGAT MENCURIGAKAN (Level 3 - 30 point)
+    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec Protection", sev: 3 },
+    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "Obfuscation", sev: 3 },
+    { regex: /require\s*\(\s*['"]socket(?:\.http)?['"]\s*\)/i, desc: "Socket/HTTP Network", sev: 3 },
+    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "Base64 Encoded Blob", sev: 3 },
+    { regex: /os\.remove|os\.rename/i, desc: "OS File Manipulation", sev: 3 },
+    { regex: /getenv\s*\(\s*['"]APPDATA['"]\s*\)/i, desc: "Access AppData", sev: 3 },
+
+    // MENCURIGAKAN (Level 2 - 18 point)
+    { regex: /\b(password|username|token|hwid|ip)\b\s*[:=]/i, desc: "Credential Variable", sev: 2 },
+    { regex: /\bsampGetPlayer(?:Nickname|Name|Ip)\b/i, desc: "SAMP Player Data Grabber", sev: 2 },
+    { regex: /getClipboardText/i, desc: "Clipboard Reader", sev: 2 },
+    { regex: /io\.open/i, desc: "File I/O Writer", sev: 2 },
+
+    // PERINGATAN (Level 1 - 8 point)
+    { regex: /loadstring/i, desc: "Loadstring Keyword", sev: 1 },
+    { regex: /password/i, desc: "Password Keyword", sev: 1 }
+];
+
+const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50 };
 
 const csSessions = new Map();
 const spamConfigs = new Map();
@@ -99,32 +132,29 @@ async function generateAIResponse(input) {
     }
 }
 
-// Fungsi Scanner Full AI - Mengembalikan Object JSON yang terstruktur
-async function scanFileWithAI(code, fileName) {
-    if (!GROQ_API_KEY) {
-        throw new Error("API Key Groq belum siap.");
-    }
+// Fungsi AI Khusus untuk mendeteksi baris berbahaya
+async function analyzeCodeWithAI(code, fileName) {
+    if (!GROQ_API_KEY) return "AI Scanner belum siap (API Key hilang).";
     
-    // Potong kode jika terlalu panjang & tambahkan nomor baris
+    // Potong kode jika terlalu panjang & tambahkan nomor baris agar AI tidak halusinasi
     const numberedCode = code.split('\n')
         .map((line, i) => `${i + 1}| ${line}`)
-        .slice(0, 1500) 
+        .slice(0, 1500) // Batasi 1500 baris untuk limit token
         .join('\n');
 
-    const promptContext = `Kamu adalah Sistem Analisis Keamanan Anti-Keylogger ahli.
-Tugasmu adalah membedah kode dari file '${fileName}' dan menemukan fungsi berbahaya (Webhook Discord, API Telegram bot, Remote code execution, Obfuscation, Pencurian data/SAMP).
-
-PENTING: Balas HANYA dengan output berformat JSON murni tanpa markdown, tanpa teks pembuka/penutup. Struktur JSON wajib seperti ini:
-{
-  "percent": <angka probabilitas ancaman 0-100>,
-  "status": "<Pilih salah satu: 🟢 AMAN | 🟡 MENCURIGAKAN | 🟠 SANGAT MENCURIGAKAN | 🔴 BAHAYA BESAR>",
-  "color": <Pilih salah satu (berupa angka murni): 65280 (hijau) | 16763904 (kuning) | 16746496 (orange) | 16711680 (merah)>,
-  "detail": "<Deskripsikan temuanmu dengan detail beserta nomor barisnya. Jika murni aman, isi: 'Tidak ditemukan pola mencurigakan.'>",
-  "targetLinks": ["<masukkan URL webhook discord atau token/URL telegram jika kamu temukan di dalam kode, jika tidak ada biarkan array kosong>"]
-}
-
-Kode yang akan dianalisis:
-${numberedCode}`;
+    const promptContext = `Tolong analisis kode Lua berikut. Carikan baris yang mengandung fungsi berbahaya atau pencurian data seperti webhook, API telegram, socket.http, exec, os.execute, atau variabel username/password.
+    
+    Berikan output HANYA berupa list temuan baris kode dengan format persis seperti ini:
+    - \`[kata kunci]\` di \`${fileName}\` (L[nomor baris])
+    
+    Contoh:
+    - \`username\` di \`namasc.lua\` (L7)
+    - \`socket.http\` di \`namasc.lua\` (L110)
+    
+    Jika kodenya murni aman dan tidak ada satu pun yang mencurigakan, balas HANYA dengan kata "Aman".
+    
+    Kode:
+    ${numberedCode}`;
 
     try {
         const response = await axios.post(
@@ -132,8 +162,7 @@ ${numberedCode}`;
             {
                 model: "llama-3.3-70b-versatile",
                 messages: [{ role: "user", content: promptContext }],
-                temperature: 0.1,
-                response_format: { type: "json_object" } // Memaksa respon AI dalam bentuk JSON
+                temperature: 0.1
             },
             {
                 headers: {
@@ -142,23 +171,38 @@ ${numberedCode}`;
                 }
             }
         );
-
-        let jsonString = response.data.choices[0].message.content;
-        
-        // Membersihkan markdown jika AI bandel
-        jsonString = jsonString.replace(/```json/gi, '').replace(/```/gi, '').trim();
-        return JSON.parse(jsonString);
-
+        return response.data.choices[0].message.content;
     } catch (err) {
         console.error("Groq Code Scanner Error:", err);
-        return {
-            percent: 0,
-            status: "⚠️ ERROR ANALISIS",
-            color: 0x808080,
-            detail: "Gagal memproses analisis AI. AI Server mungkin sibuk.",
-            targetLinks: []
-        };
+        return "Gagal melakukan analisis baris AI.";
     }
+}
+
+function analyzeContent(text) {
+    const matches = [];
+    let rawScore = 0;
+
+    detectionPatterns.forEach(p => {
+        if (p.regex.test(text)) {
+            matches.push(`• ${p.desc} (Level ${p.sev})`);
+            rawScore += severityWeight[p.sev];
+        }
+    });
+
+    let percent = Math.min(100, rawScore);
+    let status = "🟢 AMAN";
+    let color = 0x00ff00;
+
+    if (percent >= 80) {
+        status = "🔴 BAHAYA BESAR"; color = 0xff0000;
+    } else if (percent >= 50) {
+        status = "🟠 SANGAT MENCURIGAKAN"; color = 0xff8800;
+    } else if (percent >= 20) {
+        status = "🟡 MENCURIGAKAN"; color = 0xffcc00;
+    }
+
+    if (matches.length === 0) matches.push("Tidak ditemukan pola mencurigakan");
+    return { percent, status, color, detail: matches.join("\n") };
 }
 
 // Data Pesan Reusable untuk / dan ! commands
@@ -258,7 +302,7 @@ client.once('ready', async () => {
         console.log('🔄 Registering Slash Commands...');
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
         console.log('✅ Slash Commands berhasil diregister!');
-        console.log(`✅ Scanner AI, AI Chat, Panel Spam, dan Panel CS siap melayani!`);
+        console.log(`✅ Scanner, AI Chat, Panel Spam, dan Panel CS siap melayani!`);
     } catch (err) {
         console.error('❌ Gagal register Slash Command:', err);
     }
@@ -295,7 +339,7 @@ client.on("messageCreate", async (message) => {
         }
     }
 
-    // SCANNER CHANNEL LOGIC (FULL AI SYSTEM)
+    // SCANNER CHANNEL LOGIC
     if (message.channel.id === scannerChannelId && message.attachments.size > 0) {
         const attachment = message.attachments.first();
         const fileName = attachment.name.toLowerCase();
@@ -306,40 +350,51 @@ client.on("messageCreate", async (message) => {
         }
 
         try {
-            const processingMsg = await message.reply("🧠 Menginisialisasi AI untuk membedah seluruh struktur file...");
+            const processingMsg = await message.reply("⏳ Sedang membedah file dan memeriksa baris kode dengan AI...");
             
             const response = await axios.get(attachment.url, { responseType: "arraybuffer" });
             const contentFile = Buffer.from(response.data).toString("utf8");
             
-            // Analisis Seluruhnya Menggunakan AI
-            const aiResult = await scanFileWithAI(contentFile, attachment.name);
+            // Regex Analyzer
+            const result = analyzeContent(contentFile);
+            
+            // Ekstraksi Link Webhook / Telegram
+            const webhookRegex = /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[^\s'"]+/gi;
+            const teleRegex = /https?:\/\/api\.telegram\.org\/bot[^\s'"]+/gi;
+            const extractedWebhooks = contentFile.match(webhookRegex) || [];
+            const extractedTeles = contentFile.match(teleRegex) || [];
+            const targetLinks = [...new Set([...extractedWebhooks, ...extractedTeles])];
+
+            // AI Line Analyzer
+            const aiLines = await analyzeCodeWithAI(contentFile, attachment.name);
 
             const embed = new EmbedBuilder()
-                .setTitle("🛡️ Laporan Keamanan AI Scanner")
-                .setColor(aiResult.color)
+                .setTitle("🛡️ Hasil Analisis Keamanan")
+                .setColor(result.color)
                 .addFields(
                     { name: "👤 Pengguna", value: `${message.author}`, inline: true },
                     { name: "📄 Nama File", value: attachment.name, inline: true },
                     { name: "📦 Ukuran", value: `${(attachment.size / 1024).toFixed(2)} KB`, inline: true },
-                    { name: "📊 Status Keamanan", value: aiResult.status },
-                    { name: "⚠️ Tingkat Risiko", value: `${aiResult.percent}%` },
-                    { name: "🔎 Deteksi Sistem", value: aiResult.detail } // Baris AI dan Regex digabung jadi satu di sini
+                    { name: "📊 Status Keamanan", value: result.status },
+                    { name: "⚠️ Tingkat Risiko", value: `${result.percent}%` },
+                    { name: "🔎 Deteksi Sistem", value: result.detail },
+                    { name: "🎭 Baris Berbahaya", value: aiLines }
                 )
-                .setFooter({ text: "Deteksi Anti-Keylogger AI by TATANG COMUNITY" })
+                .setFooter({ text: "Deteksi Anti-Keylogger by TATANG COMUNITY" })
                 .setTimestamp();
 
-            await processingMsg.edit({ content: "✅ Pemindaian AI selesai!", embeds: [embed] });
+            await processingMsg.edit({ content: "✅ Analisis selesai!", embeds: [embed] });
 
-            // Jika AI menemukan Link Webhook / Telegram
-            if (aiResult.targetLinks && aiResult.targetLinks.length > 0) {
+            // Jika ada link webhook atau tele, kirim pesan terpisah agar bisa di copy paste untuk spam
+            if (targetLinks.length > 0) {
                 await message.channel.send({
-                    content: `🚨 **TARGET DIEKSTRAK OLEH AI!**\nSistem AI menemukan link yang mengarah ke infrastruktur pelaku. Salin link di bawah ini dan eksekusi menggunakan \`!panelspam\`:\n\n${aiResult.targetLinks.map(link => `\`${link}\``).join('\n')}`
+                    content: `🚨 **TARGET DITEMUKAN!**\nSistem menemukan link yang mengarah ke pelaku. Salin link di bawah ini dan gunakan di \`!panelspam\` untuk menghancurkan mereka:\n\n${targetLinks.map(link => `\`${link}\``).join('\n')}`
                 });
             }
 
         } catch (error) {
             console.error("Scanner Error:", error);
-            message.reply("❌ Gagal membaca atau menganalisis file. Coba kirim ulang dengan format yang valid (contoh: .lua).");
+            message.reply("❌ Gagal membaca atau menganalisis file coba kirim file .lua");
         }
     }
 });
@@ -526,6 +581,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
+        // Hapus { ephemeral: true } atau biarkan kosong supaya pesan jadi publik dan bot bisa nge-tag!
         await interaction.deferReply(); 
         
         const session = csSessions.get(interaction.user.id);
@@ -558,6 +614,7 @@ client.on('interactionCreate', async (interaction) => {
                 )
                 .setFooter({ text: 'Created By TATANG COMUNITY' }); 
 
+            // Bot otomatis nge-tag usernya waktu kasih hasil akhir
             await interaction.editReply({ 
                 content: `🎉 Yeay! Character Story berhasil dibuat untuk <@${interaction.user.id}>!`, 
                 embeds: [finalEmbed] 
