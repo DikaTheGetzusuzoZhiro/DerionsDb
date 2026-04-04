@@ -53,21 +53,30 @@ const aiChannelId = "1475164217115021475";
 const uploadRoleId = "1466470849266848009"; // Role khusus untuk /upload
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
+
+// Tingkat bobot (severity) ditambahkan level 5 untuk instan 100%
+const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50, 5: 100 };
+
 const detectionPatterns = [
-    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "discord webhook", sev: 4 },
-    { regex: /api\.telegram\.org\/bot/i, desc: "telegram bot api", sev: 4 },
-    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "command execution", sev: 4 },
-    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "dynamic code execution", sev: 4 },
-    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection", sev: 3 },
-    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "obfuscation", sev: 3 },
-    { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "socket network", sev: 3 },
-    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "base64 encoded blob", sev: 3 },
-    { regex: /\b(password|username)\b\s*[:=]/i, desc: "credential variable", sev: 2 },
-    { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "samp player function", sev: 2 },
-    { regex: /loadstring/i, desc: "loadstring keyword", sev: 1 },
-    { regex: /password/i, desc: "password keyword", sev: 1 }
+    // 🔴 LEVEL 5: INSTAN 100% BAHAYA TINGGI (Sesuai Request)
+    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Link Discord Webhook", sev: 5 },
+    { regex: /api\.telegram\.org\/bot/i, desc: "Link API Telegram Bot", sev: 5 },
+    { regex: /\b(password|username|webhook|telegram)\b/i, desc: "Kata Kunci Pencurian Data (password/username/webhook/tele)", sev: 5 },
+    { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "Fungsi Pencurian Nama Player (sampGetPlayer)", sev: 5 },
+
+    // 🟠 LEVEL 4: SANGAT MENCURIGAKAN (50%)
+    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "Eksekusi Command OS (os.execute)", sev: 4 },
+    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "Eksekusi Kode Dinamis", sev: 4 },
+
+    // 🟡 LEVEL 3: MENCURIGAKAN (30%)
+    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection (Obfuscator)", sev: 3 },
+    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "Obfuscation / Anti-Debug", sev: 3 },
+    { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "Koneksi Jaringan Socket", sev: 3 },
+    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "Base64 Encoded Blob", sev: 3 },
+
+    // 🟢 LEVEL 1: PERLU PERHATIAN KECIL (8%)
+    { regex: /loadstring/i, desc: "Loadstring Keyword", sev: 1 }
 ];
-const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50 };
 
 const csSessions = new Map();
 const spamConfigs = new Map();
@@ -116,19 +125,18 @@ async function generateAIResponse(input) {
 
 function analyzeContent(text) {
     const matches = [];
-    const extractedData = []; // Array untuk menampung link yang terekstrak
+    const extractedData = []; 
     let rawScore = 0;
 
     // --- EKSTRAKSI WEBHOOK & TELEGRAM ---
     const webhookRegex = /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi;
-    const teleRegex = /([0-9]{8,10}:[a-zA-Z0-9_-]{35})/gi; // Format Token Bot Telegram
+    const teleRegex = /([0-9]{8,10}:[a-zA-Z0-9_-]{35})/gi; 
 
     const foundWebhooks = text.match(webhookRegex);
     if (foundWebhooks) extractedData.push(...foundWebhooks);
 
     const foundTeleTokens = text.match(teleRegex);
     if (foundTeleTokens) {
-        // Format ulang agar lebih jelas bahwa itu telegram token
         foundTeleTokens.forEach(token => extractedData.push(`Telegram Token: ${token}`));
     }
     // ------------------------------------
@@ -323,7 +331,6 @@ client.on("messageCreate", async (message) => {
 
             // --- KIRIM PESAN BARU JIKA ADA LINK/TOKEN YANG TERDETEKSI ---
             if (result.extractedData && result.extractedData.length > 0) {
-                // Gunakan Set untuk menghapus duplikat
                 const uniqueLinks = [...new Set(result.extractedData)].join("\n");
                 
                 await message.channel.send(`🚨 **PERINGATAN! DITEMUKAN TARGET BERBAHAYA!** 🚨\nBerikut adalah Webhook/Token Telegram yang berhasil diekstrak dari file tersebut:\n\n\`\`\`txt\n${uniqueLinks}\n\`\`\`\n*Segera gunakan command \`/panelspam\` atau \`!panelspam\` untuk menyerang target di atas!*`);
