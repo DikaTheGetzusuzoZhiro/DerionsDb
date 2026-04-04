@@ -394,7 +394,7 @@ client.on("messageCreate", async (message) => {
 
         } catch (error) {
             console.error("Scanner Error:", error);
-            message.reply("❌ Gagal membaca atau menganalisis file. File mungkin dienkripsi terlalu rumit atau korup.");
+            message.reply("❌ Gagal membaca atau menganalisis file coba kirim file .lua");
         }
     }
 });
