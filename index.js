@@ -53,30 +53,21 @@ const aiChannelId = "1475164217115021475";
 const uploadRoleId = "1466470849266848009"; // Role khusus untuk /upload
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
-
-// Tingkat bobot (severity) ditambahkan level 5 untuk instan 100%
-const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50, 5: 100 };
-
 const detectionPatterns = [
-    // 🔴 LEVEL 5: INSTAN 100% BAHAYA TINGGI (Sesuai Request)
-    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Link Discord Webhook", sev: 5 },
-    { regex: /api\.telegram\.org\/bot/i, desc: "Link API Telegram Bot", sev: 5 },
-    { regex: /\b(password|username|webhook|telegram)\b/i, desc: "Kata Kunci Pencurian Data (password/username/webhook/tele)", sev: 5 },
-    { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "Fungsi Pencurian Nama Player (sampGetPlayer)", sev: 5 },
-
-    // 🟠 LEVEL 4: SANGAT MENCURIGAKAN (50%)
-    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "Eksekusi Command OS (os.execute)", sev: 4 },
-    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "Eksekusi Kode Dinamis", sev: 4 },
-
-    // 🟡 LEVEL 3: MENCURIGAKAN (30%)
-    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection (Obfuscator)", sev: 3 },
-    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "Obfuscation / Anti-Debug", sev: 3 },
-    { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "Koneksi Jaringan Socket", sev: 3 },
-    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "Base64 Encoded Blob", sev: 3 },
-
-    // 🟢 LEVEL 1: PERLU PERHATIAN KECIL (8%)
-    { regex: /loadstring/i, desc: "Loadstring Keyword", sev: 1 }
+    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "discord webhook", sev: 4 },
+    { regex: /api\.telegram\.org\/bot/i, desc: "telegram bot api", sev: 4 },
+    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "command execution", sev: 4 },
+    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "dynamic code execution", sev: 4 },
+    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection", sev: 3 },
+    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "obfuscation", sev: 3 },
+    { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "socket network", sev: 3 },
+    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "base64 encoded blob", sev: 3 },
+    { regex: /\b(password|username)\b\s*[:=]/i, desc: "credential variable", sev: 2 },
+    { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "samp player function", sev: 2 },
+    { regex: /loadstring/i, desc: "loadstring keyword", sev: 1 },
+    { regex: /password/i, desc: "password keyword", sev: 1 }
 ];
+const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50 };
 
 const csSessions = new Map();
 const spamConfigs = new Map();
@@ -125,21 +116,7 @@ async function generateAIResponse(input) {
 
 function analyzeContent(text) {
     const matches = [];
-    const extractedData = []; 
     let rawScore = 0;
-
-    // --- EKSTRAKSI WEBHOOK & TELEGRAM ---
-    const webhookRegex = /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi;
-    const teleRegex = /([0-9]{8,10}:[a-zA-Z0-9_-]{35})/gi; 
-
-    const foundWebhooks = text.match(webhookRegex);
-    if (foundWebhooks) extractedData.push(...foundWebhooks);
-
-    const foundTeleTokens = text.match(teleRegex);
-    if (foundTeleTokens) {
-        foundTeleTokens.forEach(token => extractedData.push(`Telegram Token: ${token}`));
-    }
-    // ------------------------------------
 
     detectionPatterns.forEach(p => {
         if (p.regex.test(text)) {
@@ -161,7 +138,7 @@ function analyzeContent(text) {
     }
 
     if (matches.length === 0) matches.push("Tidak ditemukan pola mencurigakan");
-    return { percent, status, color, detail: matches.join("\n"), extractedData };
+    return { percent, status, color, detail: matches.join("\n") };
 }
 
 // Data Pesan Reusable untuk / dan ! commands
@@ -170,22 +147,23 @@ const payloads = {
         embeds: [new EmbedBuilder()
             .setColor('#00d2ff')
             .setTitle('🌟 Pusat Komando & Panduan Bot 🌟')
-            .setDescription('Selamat datang di sistem asisten otomatis!\nBerikut adalah direktori lengkap fitur yang tersedia. Kamu dapat menggunakan prefix `!` atau `/` (Slash Commands).\n')
+            .setDescription('Selamat datang di sistem asisten otomatis!\nBerikut adalah direktori lengkap fitur yang tersedia. Kamu dapat menggunakan prefix `!` atau `/` (Slash Commands) untuk mengakses fitur di bawah ini.')
             .addFields(
                 { 
                     name: '🎮 ROLEPLAY & UTILITIES', 
-                    value: `**> \`!cs\` / \`/cs\`**\nMembuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n\n**> \`!panelspam\` / \`/panelspam\`**\nMembuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
+                    value: `> **\`cs\`** - Membuka panel interaktif pembuatan *Character Story* dengan bantuan AI.\n> **\`panelspam\`** - Membuka tools panel untuk melumpuhkan Webhook/Telegram target (Anti-Keylogger).` 
                 },
                 { 
                     name: '🤖 FITUR OTOMATIS (Pasif)', 
-                    value: `**> 🛡️ Cek Keylogger Otomatis**\nKirim file script ke channel Scanner. Bot akan langsung membedah dan mendeteksi script berbahaya / keylogger secara otomatis!\n\n**> 🤖 AI Chat & Typo Fixer**\nMengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
+                    value: `> **🛡️ Scanner Anti-Keylogger** - Kirim file script (\`.lua\`, \`.zip\`, \`.txt\`) ke channel Scanner, bot akan mendeteksi potensi bahaya secara otomatis.\n> **🤖 AI Chat & Typo Fixer** - Mengobrol bebas dengan AI di channel khusus, atau gunakan \`!ai [pesan]\`.` 
                 },
                 { 
                     name: '🔒 KHUSUS STAFF / ROLE TERTENTU', 
-                    value: `**> \`/upload\`**\nPanel terstruktur untuk merilis script/mod ke server.\n\n**> \`/status\`**\nMemeriksa metrik operasional bot dan ping server.` 
+                    value: `> **\`/upload\`** - Panel terstruktur untuk merilis script/mod ke server.\n> **\`/status\`** - Memeriksa metrik operasional bot dan ping server.` 
                 }
             )
-            .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' })
+            .setThumbnail('https://cdn-icons-png.flaticon.com/512/8633/8633190.png') // Ikon pemanis
+            .setFooter({ text: 'Tatang Community & Fyy Store System', iconURL: 'https://cdn-icons-png.flaticon.com/512/1041/1041883.png' })
             .setTimestamp()]
     }),
     status: (client) => ({
@@ -200,7 +178,7 @@ const payloads = {
                 { name: '🛡️ Scanner Module', value: '> `🟢 Memantau Aktif`', inline: true },
                 { name: '👥 Staff / Operator', value: '> `✅ Standby`', inline: true }
             )
-            .setFooter({ text: 'Tatang Community System' })
+            .setFooter({ text: 'Tatang Community & Fyy Store System' })
             .setTimestamp()]
     }),
     panelspam: () => ({
@@ -224,7 +202,7 @@ const payloads = {
         embeds: [new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('📝 Panel Pembuatan Character Story')
-            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)**.\n\n**⚠️ Persiapkan Data Karaktermu:**\n- **Nama IC** *(Contoh: John Doe, Udin Petot)*\n- **Level IC** *(Contoh: 3, 5, 10)*\n- **Kota Asal** *(Contoh: Los Santos, Las Venturas, San Fierro)*\n- **Tanggal Lahir & Jenis Kelamin**\n- **Bakat & Kultur Cerita**')
+            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)**.')
             .setFooter({ text: 'Created By TATANG COMUNITY' })],
         components: [
             new ActionRowBuilder().addComponents(
@@ -275,7 +253,7 @@ client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
     const content = message.content.toLowerCase();
 
-    // PREFIX COMMANDS (!)
+    // PREFIX COMMANDS (!) - Tidak memasukkan !status dan !upload
     if (content === "!help") return message.reply(payloads.help());
     if (content === "!panelspam") return message.channel.send(payloads.panelspam());
     if (content === "!cs") return message.channel.send(payloads.cs());
@@ -328,15 +306,6 @@ client.on("messageCreate", async (message) => {
                 .setTimestamp();
 
             await message.reply({ embeds: [embed] });
-
-            // --- KIRIM PESAN BARU JIKA ADA LINK/TOKEN YANG TERDETEKSI ---
-            if (result.extractedData && result.extractedData.length > 0) {
-                const uniqueLinks = [...new Set(result.extractedData)].join("\n");
-                
-                await message.channel.send(`🚨 **PERINGATAN! DITEMUKAN TARGET BERBAHAYA!** 🚨\nBerikut adalah Webhook/Token Telegram yang berhasil diekstrak dari file tersebut:\n\n\`\`\`txt\n${uniqueLinks}\n\`\`\`\n*Segera gunakan command \`/panelspam\` atau \`!panelspam\` untuk menyerang target di atas!*`);
-            }
-            // -----------------------------------------------------------
-
         } catch (error) {
             console.error("Scanner Error:", error);
             message.reply("❌ Gagal membaca atau menganalisis file.");
@@ -357,9 +326,10 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'help') return interaction.reply(payloads.help());
         if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
         if (commandName === 'cs') return interaction.reply(payloads.cs());
-        if (commandName === 'status') return interaction.reply(payloads.status(client));
+        if (commandName === 'status') return interaction.reply(payloads.status(client)); // Terhubung dengan pass client untuk Ping
 
         if (commandName === 'upload') {
+            // Cek apakah member memiliki role yang diizinkan
             if (!interaction.member.roles.cache.has(uploadRoleId)) {
                 return interaction.reply({ 
                     content: '❌ Akses Ditolak! Kamu tidak memiliki role yang diizinkan untuk menggunakan command ini.', 
@@ -487,11 +457,11 @@ client.on('interactionCreate', async (interaction) => {
 
         const modal = new ModalBuilder().setCustomId('modal_step_1').setTitle(`Detail Karakter (${side}) (1/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap (IC)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: John Doe')),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: 5')),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: Laki-laki / Perempuan')),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: 12 Mei 1998')),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Contoh: Los Santos'))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap (IC)').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setStyle(TextInputStyle.Short).setRequired(true))
         );
         return interaction.showModal(modal);
     }
@@ -518,16 +488,15 @@ client.on('interactionCreate', async (interaction) => {
 
         const modal = new ModalBuilder().setCustomId('modal_step_2').setTitle(`Detail Cerita (${session.side}) (2/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat Dominan').setStyle(TextInputStyle.Paragraph).setRequired(true).setPlaceholder('Contoh: Jago menembak, pintar negosiasi')),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Contoh: African-American, Hispanic')),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan').setStyle(TextInputStyle.Paragraph).setRequired(false).setPlaceholder('Contoh: Punya dendam masa lalu di kota asal'))
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat Dominan').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis').setStyle(TextInputStyle.Short).setRequired(false)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan').setStyle(TextInputStyle.Paragraph).setRequired(false))
         );
         return interaction.showModal(modal);
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
-        await interaction.deferReply(); 
-        
+        await interaction.deferReply();
         const session = csSessions.get(interaction.user.id);
         if (!session || !session.data) return interaction.editReply({ content: '❌ Terjadi kesalahan sesi.' });
 
@@ -553,15 +522,11 @@ client.on('interactionCreate', async (interaction) => {
                 .addFields(
                     { name: '🌐 Server', value: session.server, inline: true },
                     { name: '🎭 Sisi Cerita', value: session.side, inline: true },
-                    { name: '📈 Level', value: session.data.level, inline: true },
-                    { name: '🏙️ Asal Kota', value: session.data.city, inline: true }
+                    { name: '📈 Level', value: session.data.level, inline: true }
                 )
                 .setFooter({ text: 'Created By TATANG COMUNITY' }); 
 
-            await interaction.editReply({ 
-                content: `🎉 Yeay! Character Story berhasil dibuat untuk <@${interaction.user.id}>!`, 
-                embeds: [finalEmbed] 
-            });
+            await interaction.editReply({ embeds: [finalEmbed] });
             csSessions.delete(interaction.user.id);
         } catch (error) {
             console.error('Groq AI Error:', error);
