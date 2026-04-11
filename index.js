@@ -204,6 +204,7 @@ const payloads = {
         embeds: [new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('📝 Panel Pembuatan Character Story')
+            .setDescription('Gunakan panel ini untuk membuat Character Story otomatis.\n\n**Contoh Data yang Dibutuhkan:**\n👤 **Nama IC**: Tatang_Sutisna\n⭐ **Level**: 5\n⚧️ **Gender**: Laki-laki\n📅 **Tanggal Lahir**: 01/01/2000\n🏙️ **Kota Asal**: Los Santos')
             .setFooter({ text: 'Created By TATANG DEVELOPER' })],
         components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('start_cs').setLabel('Buat Character Story').setStyle(ButtonStyle.Primary))]
     })
@@ -234,12 +235,12 @@ const commands = [
         .setDescription('Matikan / Hidupkan sistem welcome otomatis')
         .addBooleanOption(opt => opt.setName('status').setDescription('Pilih On(True) atau Off(False)').setRequired(true)),
     
-    // --- 30 FITUR BARU TAMBAHAN ---
+    // --- FITUR TAMBAHAN ---
     new SlashCommandBuilder().setName('lock').setDescription('Kunci channel saat ini'),
     new SlashCommandBuilder().setName('unlock').setDescription('Buka kunci channel saat ini'),
     new SlashCommandBuilder().setName('purge').setDescription('Hapus pesan massal').addIntegerOption(opt => opt.setName('jumlah').setDescription('Banyak pesan (1-100)').setRequired(true)),
-    new SlashCommandBuilder().setName('clearall').setDescription('Hapus hingga 100 pesan terbaru di channel ini'),
-    new SlashCommandBuilder().setName('clear').setDescription('Hapus pesan sesuai jumlah').addIntegerOption(opt => opt.setName('jumlah').setDescription('Banyak pesan (1-100)').setRequired(true)),
+    new SlashCommandBuilder().setName('clearall').setDescription('Hapus hingga 500 pesan terbaru di channel ini'),
+    new SlashCommandBuilder().setName('clear').setDescription('Hapus pesan sesuai jumlah').addIntegerOption(opt => opt.setName('jumlah').setDescription('Banyak pesan (1-500)').setRequired(true)),
     new SlashCommandBuilder().setName('slowmode').setDescription('Atur slowmode channel').addIntegerOption(opt => opt.setName('detik').setDescription('Detik slowmode').setRequired(true)),
     new SlashCommandBuilder().setName('timeout').setDescription('Beri timeout member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)).addIntegerOption(opt => opt.setName('menit').setDescription('Durasi menit').setRequired(true)),
     new SlashCommandBuilder().setName('untimeout').setDescription('Cabut timeout member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)),
@@ -265,7 +266,6 @@ const commands = [
     new SlashCommandBuilder().setName('nickname').setDescription('Ubah nickname member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)).addStringOption(opt => opt.setName('nama_baru').setDescription('Nama baru').setRequired(true)),
     new SlashCommandBuilder().setName('roleinfo').setDescription('Lihat info sebuah role').addRoleOption(opt => opt.setName('role').setDescription('Role').setRequired(true)),
     new SlashCommandBuilder().setName('channelinfo').setDescription('Lihat info channel ini'),
-    new SlashCommandBuilder().setName('nuke').setDescription('Hapus semua chat dengan clone channel (Hati-hati)'),
     new SlashCommandBuilder().setName('ban').setDescription('Ban member dari server').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)),
     new SlashCommandBuilder().setName('kick').setDescription('Kick member dari server').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)),
     new SlashCommandBuilder().setName('addrole').setDescription('Tambahkan role ke member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)).addRoleOption(opt => opt.setName('role').setDescription('Role').setRequired(true)),
@@ -413,7 +413,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `✅ Fitur Welcome otomatis **${status ? 'DIAKTIFKAN' : 'DIMATIKAN'}**`, ephemeral: true });
         }
 
-        // --- 30 FITUR TAMBAHAN ---
+        // --- FITUR TAMBAHAN ---
         if (commandName === 'lock') {
             await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
             return interaction.reply('🔒 Channel dikunci!');
@@ -428,14 +428,29 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `🧹 Menghapus ${jumlah} pesan!`, ephemeral: true });
         }
         if (commandName === 'clearall') {
-            await interaction.channel.bulkDelete(100, true);
-            return interaction.reply({ content: `🧹 Berhasil menghapus 100 pesan terbaru!`, ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+            let deletedCount = 0;
+            for (let i = 0; i < 5; i++) {
+                const deletedMessages = await interaction.channel.bulkDelete(100, true);
+                deletedCount += deletedMessages.size;
+                if (deletedMessages.size < 100) break;
+            }
+            return interaction.editReply({ content: `🧹 Berhasil menghapus ${deletedCount} pesan terbaru!` });
         }
         if (commandName === 'clear') {
             const jumlah = interaction.options.getInteger('jumlah');
-            if (jumlah < 1 || jumlah > 100) return interaction.reply({ content: '⚠️ Jumlah harus antara 1 - 100!', ephemeral: true });
-            await interaction.channel.bulkDelete(jumlah, true);
-            return interaction.reply({ content: `🧹 Berhasil menghapus ${jumlah} pesan!`, ephemeral: true });
+            if (jumlah < 1 || jumlah > 500) return interaction.reply({ content: '⚠️ Jumlah harus antara 1 - 500!', ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+            let deletedCount = 0;
+            let fetchCount = jumlah;
+            while (fetchCount > 0) {
+                const deleteAmount = fetchCount > 100 ? 100 : fetchCount;
+                const deletedMessages = await interaction.channel.bulkDelete(deleteAmount, true);
+                if (deletedMessages.size === 0) break;
+                deletedCount += deletedMessages.size;
+                fetchCount -= deletedMessages.size;
+            }
+            return interaction.editReply({ content: `🧹 Berhasil menghapus ${deletedCount} pesan!` });
         }
         if (commandName === 'slowmode') {
             const detik = interaction.options.getInteger('detik');
@@ -500,13 +515,6 @@ client.on('interactionCreate', async (interaction) => {
         }
         if (commandName === 'roleinfo') return interaction.reply(`Info Role: ${interaction.options.getRole('role').name}`);
         if (commandName === 'channelinfo') return interaction.reply(`Info Channel: ${interaction.channel.name}`);
-        if (commandName === 'nuke') {
-            const pos = interaction.channel.position;
-            const newCh = await interaction.channel.clone();
-            await interaction.channel.delete();
-            newCh.setPosition(pos);
-            return newCh.send('☢️ Channel telah di-Nuke!');
-        }
         if (commandName === 'ban') {
             await interaction.guild.members.ban(interaction.options.getUser('target'));
             return interaction.reply(`🔨 Berhasil ban member.`);
@@ -564,23 +572,19 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'create_ticket') {
             const embed = new EmbedBuilder()
                 .setColor('#2b2d31')
-                .setTitle('🎟️ CREATE TICKET')
+                .setTitle('🎟️ CREATE TICKETS')
                 .setDescription(
                     "Silakan pilih kategori sesuai kebutuhan kamu:\n\n" +
-                    "<a:emoji_3:1471046589295628380> **Order**\n" +
-                    "Digunakan untuk:\n" +
-                    "• Melakukan pembayaran\n" +
-                    "• Konfirmasi transaksi\n" +
-                    "• Pertanyaan terkait harga / produk\n\n" +
-                    "<a:emoji_39:1471068830963859538> **Support**\n" +
-                    "Digunakan untuk:\n" +
-                    "• Error / bug pada file atau mod\n" +
-                    "• Kendala saat menggunakan file / script\n" +
-                    "• Bantuan penggunaan fitur\n\n" +
-                    "<:emoji_55:1473459687872528557> **Request Partner**\n" +
-                    "Digunakan untuk:\n" +
-                    "• Mengajukan kerja sama / partnership\n" +
-                    "• Promosi server / komunitas\n\n" +
+                    "🛒 **Order**\n" +
+                    "Digunakan untuk melakukan pembayaran, konfirmasi transaksi, atau pertanyaan terkait harga/produk.\n\n" +
+                    "🛠️ **Support**\n" +
+                    "Digunakan untuk melaporkan error/bug script, atau butuh bantuan admin.\n\n" +
+                    "🤝 **Request Partner**\n" +
+                    "Digunakan untuk mengajukan kerja sama atau partnership komunitas.\n\n" +
+                    "📩 **Claim Invite**\n" +
+                    "Digunakan untuk claim tracker invite.\n" +
+                    "**Format Deskripsi Add:**\n" +
+                    "`/invite`, *nama yang invit*, *jumlah invite*, terus *nama yang invite*.\n\n" +
                     "❗**Peraturan Ticket**\n" +
                     "• Dilarang membuat ticket tanpa tujuan yang jelas\n" +
                     "• Dilarang spam, troll, atau iseng\n\n" +
@@ -595,7 +599,8 @@ client.on('interactionCreate', async (interaction) => {
                     .addOptions([
                         { label: 'Order', value: 'ticket_order', emoji: '🛒' },
                         { label: 'Support', value: 'ticket_support', emoji: '🛠️' },
-                        { label: 'Request Partner', value: 'ticket_partner', emoji: '🤝' }
+                        { label: 'Request Partner', value: 'ticket_partner', emoji: '🤝' },
+                        { label: 'Claim Invite', value: 'ticket_invite', emoji: '📩' }
                     ])
             );
             await interaction.channel.send({ embeds: [embed], components: [row] });
