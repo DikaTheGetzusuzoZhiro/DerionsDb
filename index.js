@@ -51,7 +51,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 // =======================
 
 // SILAKAN UBAH CHANNEL ID DI SINI SESUAI KEBUTUHAN
-const scannerChannelId = "1492337144021385336"; 
+const scannerChannelId = "1489948015618691133"; 
 const aiChannelId = "1475164217115021475";      
 
 // Pengaturan Role & Pengecualian Akses Command
@@ -238,6 +238,8 @@ const commands = [
     new SlashCommandBuilder().setName('lock').setDescription('Kunci channel saat ini'),
     new SlashCommandBuilder().setName('unlock').setDescription('Buka kunci channel saat ini'),
     new SlashCommandBuilder().setName('purge').setDescription('Hapus pesan massal').addIntegerOption(opt => opt.setName('jumlah').setDescription('Banyak pesan (1-100)').setRequired(true)),
+    new SlashCommandBuilder().setName('clearall').setDescription('Hapus hingga 100 pesan terbaru di channel ini'),
+    new SlashCommandBuilder().setName('clear').setDescription('Hapus pesan sesuai jumlah').addIntegerOption(opt => opt.setName('jumlah').setDescription('Banyak pesan (1-100)').setRequired(true)),
     new SlashCommandBuilder().setName('slowmode').setDescription('Atur slowmode channel').addIntegerOption(opt => opt.setName('detik').setDescription('Detik slowmode').setRequired(true)),
     new SlashCommandBuilder().setName('timeout').setDescription('Beri timeout member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)).addIntegerOption(opt => opt.setName('menit').setDescription('Durasi menit').setRequired(true)),
     new SlashCommandBuilder().setName('untimeout').setDescription('Cabut timeout member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)),
@@ -259,7 +261,6 @@ const commands = [
     new SlashCommandBuilder().setName('pat').setDescription('Usap kepala member lain').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)),
     new SlashCommandBuilder().setName('joke').setDescription('Kirim lelucon acak'),
     new SlashCommandBuilder().setName('quote').setDescription('Kirim kata bijak acak'),
-    new SlashCommandBuilder().setName('meme').setDescription('Kirim gambar meme acak'),
     new SlashCommandBuilder().setName('afk').setDescription('Set status AFK-mu').addStringOption(opt => opt.setName('alasan').setDescription('Alasan AFK').setRequired(true)),
     new SlashCommandBuilder().setName('nickname').setDescription('Ubah nickname member').addUserOption(opt => opt.setName('target').setDescription('Member').setRequired(true)).addStringOption(opt => opt.setName('nama_baru').setDescription('Nama baru').setRequired(true)),
     new SlashCommandBuilder().setName('roleinfo').setDescription('Lihat info sebuah role').addRoleOption(opt => opt.setName('role').setDescription('Role').setRequired(true)),
@@ -426,6 +427,16 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.channel.bulkDelete(jumlah, true);
             return interaction.reply({ content: `🧹 Menghapus ${jumlah} pesan!`, ephemeral: true });
         }
+        if (commandName === 'clearall') {
+            await interaction.channel.bulkDelete(100, true);
+            return interaction.reply({ content: `🧹 Berhasil menghapus 100 pesan terbaru!`, ephemeral: true });
+        }
+        if (commandName === 'clear') {
+            const jumlah = interaction.options.getInteger('jumlah');
+            if (jumlah < 1 || jumlah > 100) return interaction.reply({ content: '⚠️ Jumlah harus antara 1 - 100!', ephemeral: true });
+            await interaction.channel.bulkDelete(jumlah, true);
+            return interaction.reply({ content: `🧹 Berhasil menghapus ${jumlah} pesan!`, ephemeral: true });
+        }
         if (commandName === 'slowmode') {
             const detik = interaction.options.getInteger('detik');
             await interaction.channel.setRateLimitPerUser(detik);
@@ -478,7 +489,6 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'pat') return interaction.reply(`pat pat~ ${interaction.user} mengusap kepala ${interaction.options.getUser('target')}!`);
         if (commandName === 'joke') return interaction.reply(`Kenapa ayam menyeberang jalan? Biar sampai di seberang.`);
         if (commandName === 'quote') return interaction.reply(`"Terkadang sistem rusak bukan karena bug, tapi karena kurang ngopi."`);
-        if (commandName === 'meme') return interaction.reply(`Kirim gambar meme: https://i.imgflip.com/1ur9b0.jpg`);
         if (commandName === 'afk') {
             afkUsers.set(interaction.user.id, interaction.options.getString('alasan'));
             return interaction.reply(`💤 Kamu AFK. Alasan: ${interaction.options.getString('alasan')}`);
