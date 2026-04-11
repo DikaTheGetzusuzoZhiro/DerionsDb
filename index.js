@@ -295,7 +295,7 @@ client.on('guildMemberAdd', async (member) => {
         .setDescription(`Halo ${member}, selamat bergabung dengan komunitas kami!\n\nJangan lupa baca peraturan dan nikmati waktumu di sini.`)
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
         .setImage(WELCOME_BG_URL)
-        .setFooter({ text: `Member #${member.guild.memberCount} | Di Area Karnaval Los Santos`, iconURL: member.guild.iconURL() })
+        .setFooter({ text: `Member #${member.guild.memberCount}, iconURL: member.guild.iconURL() })
         .setTimestamp();
 
     await channel.send({ content: `Hai ${member}!`, embeds: [embed] });
