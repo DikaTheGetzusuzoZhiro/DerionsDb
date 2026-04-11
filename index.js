@@ -565,7 +565,28 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setColor('#2b2d31')
                 .setTitle('🎟️ CREATE TICKET')
-                .setDescription(`Pilih kategori tiket di bawah ini untuk bantuan.`);
+                .setDescription(
+                    "Silakan pilih kategori sesuai kebutuhan kamu:\n\n" +
+                    "<a:emoji_3:1471046589295628380> **Order**\n" +
+                    "Digunakan untuk:\n" +
+                    "• Melakukan pembayaran\n" +
+                    "• Konfirmasi transaksi\n" +
+                    "• Pertanyaan terkait harga / produk\n\n" +
+                    "<a:emoji_39:1471068830963859538> **Support**\n" +
+                    "Digunakan untuk:\n" +
+                    "• Error / bug pada file atau mod\n" +
+                    "• Kendala saat menggunakan file / script\n" +
+                    "• Bantuan penggunaan fitur\n\n" +
+                    "<:emoji_55:1473459687872528557> **Request Partner**\n" +
+                    "Digunakan untuk:\n" +
+                    "• Mengajukan kerja sama / partnership\n" +
+                    "• Promosi server / komunitas\n\n" +
+                    "❗**Peraturan Ticket**\n" +
+                    "• Dilarang membuat ticket tanpa tujuan yang jelas\n" +
+                    "• Dilarang spam, troll, atau iseng\n\n" +
+                    "Terima kasih telah mematuhi peraturan 🙏\n" +
+                    "Selamat menggunakan layanan kami 🚀"
+                );
 
             const row = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
