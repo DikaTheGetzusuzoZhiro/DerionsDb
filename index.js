@@ -295,7 +295,7 @@ client.on('guildMemberAdd', async (member) => {
         .setDescription(`Halo ${member}, selamat bergabung dengan komunitas kami!\n\nJangan lupa baca peraturan dan nikmati waktumu di sini.`)
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
         .setImage(WELCOME_BG_URL)
-        .setFooter({ text: `Member #${member.guild.memberCount}`, iconURL: member.guild.iconURL() })
+        .setFooter({ text: `Member #${member.guild.memberCount}` })
         .setTimestamp();
 
     await channel.send({ content: `Hai ${member}!`, embeds: [embed] });
@@ -604,37 +604,3 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
         await interaction.deferReply(); 
-        const session = csSessions.get(interaction.user.id);
-        
-        try {
-            const promptContext = `Tuliskan Character Story GTA Roleplay untuk karakter bernama ${session.data.nama} (Gender: ${session.data.gender}). Lahir: ${session.data.dob}, Kota: ${session.data.city}. Sisi Cerita: ${session.side}, Bakat: ${interaction.fields.getTextInputValue('in_bakat')}. Buat 3 paragraf bahasa Indonesia formal naratif.`;
-
-            const chatCompletion = await groq.chat.completions.create({
-                messages: [{ role: 'user', content: promptContext }],
-                model: 'llama-3.3-70b-versatile',
-                temperature: 0.7
-            });
-
-            const story = chatCompletion.choices[0].message.content;
-
-            const finalEmbed = new EmbedBuilder()
-                .setColor(session.side === 'Good Side' ? '#2ecc71' : '#e74c3c')
-                .setTitle(`📄 Character Story: ${session.data.nama}`)
-                .setDescription(story.substring(0, 4000))
-                .addFields(
-                    { name: '🌐 Server', value: session.server, inline: true },
-                    { name: '🎭 Sisi Cerita', value: session.side, inline: true },
-                    { name: '📈 Level', value: session.data.level, inline: true }
-                )
-                .setFooter({ text: 'Created By TATANG COMUNITY' }); 
-
-            await interaction.editReply({ content: `🎉 Yeay! Character Story berhasil dibuat!`, embeds: [finalEmbed] });
-            csSessions.delete(interaction.user.id);
-        } catch (error) {
-            await interaction.editReply({ content: '❌ Gagal membuat cerita karena server AI sibuk.' });
-        }
-    }
-});
-
-// LOGIN
-client.login(TOKEN);
