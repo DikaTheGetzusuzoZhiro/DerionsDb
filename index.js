@@ -38,7 +38,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildInvites // WAJIB UNTUK INVITE TRACKING
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -50,13 +51,13 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 // 🔒 CONFIGURATION
 // =======================
 
-// SILAKAN UBAH CHANNEL ID DI SINI SESUAI KEBUTUHAN
 const scannerChannelId = "1492337144021385336"; 
 const aiChannelId = "1475164217115021475";      
+const inviteTrackChannelId = "1464779907375825068"; // CHANNEL INVITE TRACKING
 
 // Pengaturan Role & Pengecualian Akses Command
 const EXCLUSIVE_ROLE_ID = "1466470849266848009"; 
-const PUBLIC_COMMANDS = ['panelspam', 'cs', 'create_ticket', 'status']; 
+const PUBLIC_COMMANDS = ['panelspam', 'creatcs', 'create_ticket', 'status']; // 'cs' diubah ke 'creatcs'
 
 // Pengaturan Auto Welcome Hardcode
 const WELCOME_CHANNEL_ID = "1464775422913941568";
@@ -66,23 +67,16 @@ const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50, 5: 100 };
 
 const detectionPatterns = [
-    // 🔴 LEVEL 5: INSTAN 100% BAHAYA TINGGI
     { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Link Discord Webhook", sev: 5 },
     { regex: /api\.telegram\.org\/bot/i, desc: "Link API Telegram Bot", sev: 5 },
     { regex: /\b(password|username|webhook|telegram)\b/i, desc: "Kata Kunci Pencurian Data", sev: 5 },
     { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "Fungsi Pencurian Nama Player", sev: 5 },
-
-    // 🟠 LEVEL 4: SANGAT MENCURIGAKAN (50%)
     { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "Eksekusi Command OS", sev: 4 },
     { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "Eksekusi Kode Dinamis", sev: 4 },
-
-    // 🟡 LEVEL 3: MENCURIGAKAN (30%)
     { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection (Obfuscator)", sev: 3 },
     { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "Obfuscation / Anti-Debug", sev: 3 },
     { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "Koneksi Jaringan Socket", sev: 3 },
     { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "Base64 Encoded Blob", sev: 3 },
-
-    // 🟢 LEVEL 1: PERLU PERHATIAN KECIL (8%)
     { regex: /loadstring/i, desc: "Loadstring Keyword", sev: 1 }
 ];
 
@@ -91,6 +85,7 @@ const spamConfigs = new Map();
 const activeSpams = new Map();
 const welcomeConfigs = new Map(); 
 const afkUsers = new Map(); 
+const invitesCache = new Map(); // CACHE UNTUK INVITE TRACKING
 
 // =======================
 // 🛠️ HELPER FUNCTIONS
@@ -165,7 +160,7 @@ const payloads = {
             .setTitle('🌟 Pusat Komando & Panduan Bot 🌟')
             .setDescription('Gunakan prefix `!` atau `/` (Slash Commands).\n')
             .addFields(
-                { name: '🎮 ROLEPLAY & UTILITIES', value: `**> \`!cs\` / \`/cs\`**\nMembuka panel interaktif pembuatan *Character Story*.\n**> \`!panelspam\` / \`/panelspam\`**\nMembuka tools panel Anti-Keylogger.` },
+                { name: '🎮 ROLEPLAY & UTILITIES', value: `**> \`!creatcs\` / \`/creatcs\`**\nMembuka panel interaktif pembuatan *Character Story*.\n**> \`!panelspam\` / \`/panelspam\`**\nMembuka tools panel Anti-Keylogger.` },
                 { name: '🤖 FITUR OTOMATIS', value: `**> 🛡️ Cek Keylogger Otomatis**\nKirim file ke channel Scanner.\n**> 🤖 AI Chat**\nNgobrol bebas tanpa command di channel AI.` },
                 { name: '🔒 KHUSUS STAFF', value: `**> \`/upload\`**\nUpload script/mod ke server.\n**> \`/status\`**\nMemeriksa metrik operasional bot.` }
             )
@@ -204,7 +199,7 @@ const payloads = {
         embeds: [new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('📝 Panel Pembuatan Character Story')
-            .setDescription('Gunakan panel ini untuk membuat Character Story otomatis.\n\n**Contoh Data yang Dibutuhkan:**\n👤 **Nama IC**: Tatang_Sutisna\n⭐ **Level**: 5\n⚧️ **Gender**: Laki-laki\n📅 **Tanggal Lahir**: 01/01/2000\n🏙️ **Kota Asal**: Los Santos')
+            .setDescription('Gunakan panel ini untuk membuat Character Story otomatis dengan bantuan AI.\nCukup isi form yang disediakan dan AI akan merangkai ceritanya untukmu!\n\n**Contoh Data yang Dibutuhkan:**\n👤 **Nama IC**: Tatang_Sutisna\n⭐ **Level**: 5\n⚧️ **Gender**: Laki-laki\n📅 **Tanggal Lahir**: 01/01/2000\n🏙️ **Kota Asal**: Los Santos\n\n*Tekan tombol di bawah ini untuk mulai membuat cerita!*')
             .setFooter({ text: 'Created By TATANG DEVELOPER' })],
         components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('start_cs').setLabel('Buat Character Story').setStyle(ButtonStyle.Primary))]
     })
@@ -217,7 +212,7 @@ const payloads = {
 const commands = [
     new SlashCommandBuilder().setName('help').setDescription('Tampilkan menu bantuan bot'),
     new SlashCommandBuilder().setName('panelspam').setDescription('Tampilkan panel spam target keylogger'),
-    new SlashCommandBuilder().setName('cs').setDescription('Buka panel pembuatan Character Story (CS)'),
+    new SlashCommandBuilder().setName('creatcs').setDescription('Buka panel pembuatan Character Story (CS)'), // Command diubah
     new SlashCommandBuilder().setName('status').setDescription('Cek status operator bot & keylogger'),
     new SlashCommandBuilder()
         .setName('upload')
@@ -274,6 +269,17 @@ const commands = [
 
 client.once('ready', async () => {
     console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
+    
+    // CACHE SEMUA INVITES UNTUK TRACKING
+    client.guilds.cache.forEach(async (guild) => {
+        try {
+            const firstInvites = await guild.invites.fetch();
+            invitesCache.set(guild.id, new Map(firstInvites.map((inv) => [inv.code, inv.uses])));
+        } catch (err) {
+            console.log("Tidak bisa fetch invites untuk server:", guild.id);
+        }
+    });
+
     try {
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
         console.log('✅ 30+ Slash Commands berhasil diregister!');
@@ -282,10 +288,53 @@ client.once('ready', async () => {
     }
 });
 
+// EVENT TRACKING INVITE DIBUAT/DIHAPUS
+client.on('inviteCreate', (invite) => {
+    const guildInvites = invitesCache.get(invite.guild.id) || new Map();
+    guildInvites.set(invite.code, invite.uses);
+    invitesCache.set(invite.guild.id, guildInvites);
+});
+
+client.on('inviteDelete', (invite) => {
+    const guildInvites = invitesCache.get(invite.guild.id);
+    if (guildInvites) {
+        guildInvites.delete(invite.code);
+    }
+});
+
 // =======================
-// 🚪 GUILD MEMBER ADD (Welcome System Default On)
+// 🚪 GUILD MEMBER ADD (Welcome & Invite Track)
 // =======================
 client.on('guildMemberAdd', async (member) => {
+    // --- 1. SYSTEM INVITE TRACKING ---
+    try {
+        const newInvites = await member.guild.invites.fetch();
+        const oldInvites = invitesCache.get(member.guild.id);
+        const invite = newInvites.find(i => i.uses > (oldInvites.get(i.code) || 0));
+        
+        let inviterName = "Tidak diketahui";
+        if (invite) {
+            inviterName = invite.inviter ? invite.inviter.username : "Tidak diketahui";
+            
+            // Update cache
+            oldInvites.set(invite.code, invite.uses);
+            invitesCache.set(member.guild.id, oldInvites);
+
+            const trackChannel = member.guild.channels.cache.get(inviteTrackChannelId);
+            if (trackChannel) {
+                const trackEmbed = new EmbedBuilder()
+                    .setColor('#00d2ff')
+                    .setAuthor({ name: 'Member Baru Bergabung!', iconURL: member.user.displayAvatarURL() })
+                    .setDescription(`**Member:** ${member} (${member.user.tag})\n**Diundang Oleh:** \`${inviterName}\`\n**Kode Invite:** \`${invite.code}\`\n**Total Digunakan:** \`${invite.uses}\` kali`)
+                    .setTimestamp();
+                await trackChannel.send({ embeds: [trackEmbed] });
+            }
+        }
+    } catch (err) {
+        console.error("Invite tracking error:", err);
+    }
+
+    // --- 2. SYSTEM WELCOME LAMA ---
     const config = welcomeConfigs.get(member.guild.id);
     const isEnabled = config !== undefined ? config.enabled : true; 
     if (!isEnabled) return; 
@@ -328,11 +377,10 @@ client.on("messageCreate", async (message) => {
     const content = message.content.toLowerCase();
     if (content === "!help") return message.reply(payloads.help());
     if (content === "!panelspam") return message.channel.send(payloads.panelspam());
-    if (content === "!cs") return message.channel.send(payloads.cs());
+    if (content === "!creatcs") return message.channel.send(payloads.cs()); // Command diubah
 
-    // --- AI CHANNEL LOGIC (TANPA PREFIX !ai) ---
+    // --- AI CHANNEL LOGIC ---
     if (message.channel.id === aiChannelId) {
-        // Karena di channel khusus AI, bot akan langsung merespons semua chat biasa
         await message.channel.sendTyping();
         const aiResponse = await generateAIResponse(message.content);
         return message.reply(aiResponse);
@@ -369,7 +417,6 @@ client.on("messageCreate", async (message) => {
 
             await message.reply({ embeds: [embed] });
 
-            // Ekstrak Link untuk Panel Spam
             if (result.extractedData && result.extractedData.length > 0) {
                 const uniqueLinks = [...new Set(result.extractedData)].join("\n");
                 await message.channel.send(`🚨 **PERINGATAN! DITEMUKAN TARGET BERBAHAYA!** 🚨\nBerikut adalah Webhook/Token Telegram yang berhasil diekstrak:\n\n\`\`\`txt\n${uniqueLinks}\n\`\`\`\n*Gunakan \`/panelspam\` atau \`!panelspam\` untuk menyerang target!*`);
@@ -403,7 +450,7 @@ client.on('interactionCreate', async (interaction) => {
         // --- COMMANDS UTAMA ---
         if (commandName === 'help') return interaction.reply(payloads.help());
         if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
-        if (commandName === 'cs') return interaction.reply(payloads.cs());
+        if (commandName === 'creatcs') return interaction.reply(payloads.cs()); // Command diubah
         if (commandName === 'status') return interaction.reply(payloads.status(client));
 
         // --- WELCOME ---
@@ -413,7 +460,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `✅ Fitur Welcome otomatis **${status ? 'DIAKTIFKAN' : 'DIMATIKAN'}**`, ephemeral: true });
         }
 
-        // --- FITUR TAMBAHAN ---
+        // --- FITUR TAMBAHAN (Sama persis) ---
         if (commandName === 'lock') {
             await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
             return interaction.reply('🔒 Channel dikunci!');
@@ -568,7 +615,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // --- CREATE TICKET ---
+        // --- CREATE TICKET (Claim Invite Dihapus) ---
         if (commandName === 'create_ticket') {
             const embed = new EmbedBuilder()
                 .setColor('#2b2d31')
@@ -581,10 +628,6 @@ client.on('interactionCreate', async (interaction) => {
                     "Digunakan untuk melaporkan error/bug script, atau butuh bantuan admin.\n\n" +
                     "🤝 **Request Partner**\n" +
                     "Digunakan untuk mengajukan kerja sama atau partnership komunitas.\n\n" +
-                    "📩 **Claim Invite**\n" +
-                    "Digunakan untuk claim tracker invite.\n" +
-                    "**Format Deskripsi Add:**\n" +
-                    "`/invite`, *nama yang invit*, *jumlah invite*, terus *nama yang invite*.\n\n" +
                     "❗**Peraturan Ticket**\n" +
                     "• Dilarang membuat ticket tanpa tujuan yang jelas\n" +
                     "• Dilarang spam, troll, atau iseng\n\n" +
@@ -599,8 +642,7 @@ client.on('interactionCreate', async (interaction) => {
                     .addOptions([
                         { label: 'Order', value: 'ticket_order', emoji: '🛒' },
                         { label: 'Support', value: 'ticket_support', emoji: '🛠️' },
-                        { label: 'Request Partner', value: 'ticket_partner', emoji: '🤝' },
-                        { label: 'Claim Invite', value: 'ticket_invite', emoji: '📩' }
+                        { label: 'Request Partner', value: 'ticket_partner', emoji: '🤝' }
                     ])
             );
             await interaction.channel.send({ embeds: [embed], components: [row] });
