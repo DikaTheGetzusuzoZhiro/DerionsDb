@@ -49,7 +49,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 // 🔒 CONFIGURATION
 // =======================
 
-const scannerChannelId = "1492337144021385336";
+const scannerChannelId = "1489948015618691133";
 const aiChannelId = "1475164217115021475";
 const welcomeChannelId = "1464775422913941568";
 const staffRoleId = "1466470849266848009"; // Role owner/staff untuk upload & moderasi
