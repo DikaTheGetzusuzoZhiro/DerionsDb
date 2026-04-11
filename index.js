@@ -267,7 +267,7 @@ client.on('guildMemberAdd', async (member) => {
 
     // ⚠️ PERHATIAN: Pastikan URL ini adalah direct link gambar (.png/.jpg)
     // Jika link di bawah ini error tidak muncul di Discord, klik kanan gambar di pesan Discord tsb -> Copy Image Address
-    const backgroundUrl = "https://discord.com/channels/1464775421777154152/1471539417482006735/1492328908920717522";
+    const backgroundUrl = "https://cdn.discordapp.com/attachments/1471539417482006735/1492328908417138720/icegif-421.gif?ex=69daef19&is=69d99d99&hm=ed437869f512ebf94b8c57a29e9f48dac6bc0d46d9db05061ea66579d4536695&";
 
     const embed = new EmbedBuilder()
         .setColor('#00d2ff')
