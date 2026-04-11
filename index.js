@@ -51,7 +51,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 // =======================
 
 // SILAKAN UBAH CHANNEL ID DI SINI SESUAI KEBUTUHAN
-const scannerChannelId = "1489948015618691133"; 
+const scannerChannelId = "1492337144021385336"; 
 const aiChannelId = "1475164217115021475";      
 
 // Pengaturan Role & Pengecualian Akses Command
