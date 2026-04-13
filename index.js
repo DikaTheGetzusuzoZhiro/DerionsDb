@@ -37,7 +37,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers // Wajib untuk mendeteksi member baru (Welcome)
+        GatewayIntentBits.GuildMembers
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
@@ -52,14 +52,12 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 const scannerChannelId = "1492337144021385336";
 const aiChannelId = "1475164217115021475";
 const welcomeChannelId = "1464775422913941568";
-const staffRoleId = "1466470849266848009"; // Role owner/staff untuk upload & moderasi
+const staffRoleId = "1466470849266848009";
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
-// Background Welcome 
 const WELCOME_BG_URL = "https://cdn.discordapp.com/attachments/1471539417482006735/1492328908417138720/icegif-421.gif?ex=69daef19&is=69d99d99&hm=ed437869f512ebf94b8c57a29e9f48dac6bc0d46d9db05061ea66579d4536695&";
 
-// Scanner Severities
 const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50, 5: 100 };
 const detectionPatterns = [
     { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Link Discord Webhook", sev: 5 },
@@ -78,16 +76,15 @@ const detectionPatterns = [
 const csSessions = new Map();
 const spamConfigs = new Map();
 const activeSpams = new Map();
-const welcomeConfigs = new Map(); // Untuk mengatur ON/OFF welcome per guild
+const welcomeConfigs = new Map();
+const userWarnings = new Map(); // Untuk anti link Discord
 
 // =======================
-// 🛡️ ANTI LINK DISCORD
+// 🛡️ ANTI LINK DISCORD (OTOMATIS)
 // =======================
 const discordLinkRegex = /https?:\/\/(?:www\.)?(?:discord(?:app)?\.com|discord\.gg)\/[^\s]+/gi;
-const userWarnings = new Map(); // userId -> { count, lastWarningTime }
 
 async function handleDiscordLinkViolation(message) {
-    // Abaikan bot & staff
     if (message.author.bot) return false;
     const member = message.member;
     if (member && member.roles.cache.has(staffRoleId)) return false;
@@ -95,20 +92,17 @@ async function handleDiscordLinkViolation(message) {
     const userId = message.author.id;
     const now = Date.now();
 
-    // Ambil data pelanggaran user
     let userData = userWarnings.get(userId);
     if (!userData) {
         userData = { count: 0, lastWarningTime: now };
     }
 
-    // Hapus pesan yang mengandung link Discord
     try {
         await message.delete();
     } catch (err) {
         console.error("Gagal hapus pesan link Discord:", err);
     }
 
-    // Kirim peringatan
     const warningEmbed = new EmbedBuilder()
         .setColor(0xffa500)
         .setTitle("⚠️ Peringatan! Dilarang Share Link Discord")
@@ -120,12 +114,10 @@ async function handleDiscordLinkViolation(message) {
         setTimeout(() => msg.delete().catch(() => {}), 5000);
     });
 
-    // Tambah counter
     userData.count++;
     userData.lastWarningTime = now;
     userWarnings.set(userId, userData);
 
-    // Jika sudah 2 pelanggaran, timeout 30 menit
     if (userData.count >= 2) {
         try {
             await member.timeout(30 * 60 * 1000, "Mengirim link Discord sebanyak 2 kali");
@@ -137,7 +129,6 @@ async function handleDiscordLinkViolation(message) {
             await message.channel.send({ embeds: [timeoutEmbed] }).then(msg => {
                 setTimeout(() => msg.delete().catch(() => {}), 10000);
             });
-            // Reset counter setelah timeout (opsional, bisa juga biarkan agar tidak timeout terus)
             userWarnings.delete(userId);
         } catch (err) {
             console.error("Gagal melakukan timeout:", err);
@@ -223,7 +214,6 @@ function analyzeContent(text) {
     return { percent, status, color, detail: matches.join("\n"), extractedData };
 }
 
-// Data Pesan
 const payloads = {
     help: () => ({
         embeds: [new EmbedBuilder()
@@ -233,7 +223,7 @@ const payloads = {
             .addFields(
                 { name: '🎮 ROLEPLAY & UTILITIES', value: `**> \`!cs\` / \`/cs\`**\nBuat Character Story.\n\n**> \`!panelspam\` / \`/panelspam\`**\nSpam target keylogger.` },
                 { name: '🤖 FITUR OTOMATIS', value: `**> 🛡️ Cek Keylogger**\nKirim file ke channel Scanner otomatis mendeteksi bahaya!\n\n**> 🤖 AI Chat**\nKirim pesan di channel AI, otomatis dijawab.` },
-                { name: '🔒 KHUSUS STAFF', value: `**> \`/upload\`**\nRilis script.\n**> \`/ban\`, \`/kick\`, \`/timeout\`, \`/clear\`, \`/clearall\`, \`/welcome\`**\nModerasi server.\n**> \`/status\`**\nCek ping & sistem.` }
+                { name: '🔒 KHUSUS STAFF', value: `**> \`/upload\`**\nRilis script.\n**> \`/ban\`, \`/kick\`, \`/timeout\`, \`/clear\`, \`/clearall\`, \`/clearalllink\`, \`/welcome\`**\nModerasi server.\n**> \`/status\`**\nCek ping & sistem.` }
             )
             .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' })
             .setTimestamp()]
@@ -322,6 +312,10 @@ const commands = [
         .setName('clearall')
         .setDescription('Hapus pesan hingga 100 sekaligus (Khusus Staff)'),
     new SlashCommandBuilder()
+        .setName('clearalllink')
+        .setDescription('Hapus semua pesan yang mengandung link Discord di channel ini (Khusus Staff)')
+        .addIntegerOption(opt => opt.setName('limit').setDescription('Jumlah pesan terakhir yang diperiksa (max 100, default 100)').setRequired(false)),
+    new SlashCommandBuilder()
         .setName('upload')
         .setDescription('Upload script/mod ke channel (Khusus Staff)')
         .addChannelOption(opt => opt.setName('channel').setDescription('Pilih channel tujuan').addChannelTypes(ChannelType.GuildText).setRequired(true))
@@ -348,7 +342,6 @@ client.once('ready', async () => {
 // =======================
 
 client.on('guildMemberAdd', async (member) => {
-    // Default ON kecuali diset OFF via command
     const config = welcomeConfigs.get(member.guild.id);
     if (config && config.enabled === false) return;
 
@@ -374,12 +367,10 @@ client.on('guildMemberAdd', async (member) => {
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
-    // =======================
-    // 🚨 ANTI LINK DISCORD (PRIORITAS)
-    // =======================
+    // ANTI LINK DISCORD OTOMATIS
     if (discordLinkRegex.test(message.content)) {
         await handleDiscordLinkViolation(message);
-        return; // Jangan proses lebih lanjut
+        return;
     }
 
     const content = message.content.toLowerCase();
@@ -388,7 +379,6 @@ client.on("messageCreate", async (message) => {
     if (content === "!panelspam") return message.channel.send(payloads.panelspam());
     if (content === "!cs") return message.channel.send(payloads.cs());
 
-    // AI CHANNEL LOGIC (Otomatis tanpa !ai)
     if (message.channel.id === aiChannelId) {
         if (content.startsWith("!ai")) {
             const userInput = message.content.slice(3).trim();
@@ -397,20 +387,17 @@ client.on("messageCreate", async (message) => {
             return message.reply(aiResponse);
         }
         
-        // Cek Typo dan Respon Acak
         if (detectTypo(content)) {
             const aiResponse = await generateAIResponse("Tanggapi pesan ini yang sepertinya banyak typo: " + message.content);
             return message.reply(aiResponse);
         }
         
-        // Membalas pesan secara reguler
-        if (Math.random() < 0.3) { // 30% chance merespon chat normal
+        if (Math.random() < 0.3) {
             const aiResponse = await generateAIResponse(message.content);
             return message.reply(aiResponse);
         }
     }
 
-    // SCANNER CHANNEL LOGIC
     if (message.channel.id === scannerChannelId && message.attachments.size > 0) {
         const attachment = message.attachments.first();
         const fileName = attachment.name.toLowerCase();
@@ -474,10 +461,8 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply(`**Tanya:** ${question}\n**AI:** ${answer}`);
         }
 
-        // =======================
-        // 🚨 MODERATION COMMANDS (Khusus Staff)
-        // =======================
-        if (['welcome', 'ban', 'kick', 'timeout', 'clear', 'clearall', 'upload'].includes(commandName) && !isStaff) {
+        // MODERATION COMMANDS (khusus staff)
+        if (['welcome', 'ban', 'kick', 'timeout', 'clear', 'clearall', 'clearalllink', 'upload'].includes(commandName) && !isStaff) {
             return interaction.reply({ content: '❌ Akses Ditolak! Kamu tidak memiliki role khusus (Staff).', ephemeral: true });
         }
 
@@ -523,6 +508,46 @@ client.on('interactionCreate', async (interaction) => {
         if (commandName === 'clearall') {
             await interaction.channel.bulkDelete(100, true);
             return interaction.reply({ content: `🧹 Berhasil menghapus 100 pesan sekaligus (Batas maksimal Discord API)!`, ephemeral: true });
+        }
+
+        // =======================
+        // 🆕 COMMAND /clearalllink
+        // =======================
+        if (commandName === 'clearalllink') {
+            await interaction.deferReply({ ephemeral: true }); // biar tidak mengganggu channel
+
+            let limit = interaction.options.getInteger('limit') || 100;
+            if (limit < 1) limit = 1;
+            if (limit > 100) limit = 100;
+
+            const channel = interaction.channel;
+            let deletedCount = 0;
+            let errorCount = 0;
+
+            try {
+                // Ambil pesan terakhir sebanyak limit
+                const messages = await channel.messages.fetch({ limit: limit });
+                const toDelete = messages.filter(msg => discordLinkRegex.test(msg.content));
+
+                for (const [id, msg] of toDelete) {
+                    try {
+                        await msg.delete();
+                        deletedCount++;
+                        // sedikit jeda untuk menghindari rate limit
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    } catch (err) {
+                        console.error(`Gagal hapus pesan ${id}:`, err);
+                        errorCount++;
+                    }
+                }
+
+                const resultMsg = `✅ Berhasil menghapus **${deletedCount}** pesan yang mengandung link Discord dari ${limit} pesan terakhir.${errorCount > 0 ? `\n⚠️ ${errorCount} pesan gagal dihapus (mungkin bukan punya bot atau sudah terhapus).` : ''}`;
+                await interaction.editReply({ content: resultMsg });
+            } catch (err) {
+                console.error("Error clearalllink:", err);
+                await interaction.editReply({ content: "❌ Terjadi error saat mengambil atau menghapus pesan." });
+            }
+            return;
         }
 
         if (commandName === 'upload') {
@@ -711,5 +736,4 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// LOGIN
 client.login(TOKEN);
