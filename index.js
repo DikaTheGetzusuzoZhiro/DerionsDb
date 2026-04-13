@@ -81,6 +81,72 @@ const activeSpams = new Map();
 const welcomeConfigs = new Map(); // Untuk mengatur ON/OFF welcome per guild
 
 // =======================
+// 🛡️ ANTI LINK DISCORD
+// =======================
+const discordLinkRegex = /https?:\/\/(?:www\.)?(?:discord(?:app)?\.com|discord\.gg)\/[^\s]+/gi;
+const userWarnings = new Map(); // userId -> { count, lastWarningTime }
+
+async function handleDiscordLinkViolation(message) {
+    // Abaikan bot & staff
+    if (message.author.bot) return false;
+    const member = message.member;
+    if (member && member.roles.cache.has(staffRoleId)) return false;
+
+    const userId = message.author.id;
+    const now = Date.now();
+
+    // Ambil data pelanggaran user
+    let userData = userWarnings.get(userId);
+    if (!userData) {
+        userData = { count: 0, lastWarningTime: now };
+    }
+
+    // Hapus pesan yang mengandung link Discord
+    try {
+        await message.delete();
+    } catch (err) {
+        console.error("Gagal hapus pesan link Discord:", err);
+    }
+
+    // Kirim peringatan
+    const warningEmbed = new EmbedBuilder()
+        .setColor(0xffa500)
+        .setTitle("⚠️ Peringatan! Dilarang Share Link Discord")
+        .setDescription(`${message.author}, kamu tidak diperbolehkan mengirim link Discord di server ini.`)
+        .addFields({ name: "Pelanggaran ke", value: `${userData.count + 1}`, inline: true })
+        .setFooter({ text: "Jika mencapai 2x, akan di-timeout 30 menit" })
+        .setTimestamp();
+    await message.channel.send({ embeds: [warningEmbed] }).then(msg => {
+        setTimeout(() => msg.delete().catch(() => {}), 5000);
+    });
+
+    // Tambah counter
+    userData.count++;
+    userData.lastWarningTime = now;
+    userWarnings.set(userId, userData);
+
+    // Jika sudah 2 pelanggaran, timeout 30 menit
+    if (userData.count >= 2) {
+        try {
+            await member.timeout(30 * 60 * 1000, "Mengirim link Discord sebanyak 2 kali");
+            const timeoutEmbed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle("🔇 Timeout Diterapkan")
+                .setDescription(`${message.author} telah di-timeout selama 30 menit karena mengirim link Discord sebanyak 2 kali.`)
+                .setTimestamp();
+            await message.channel.send({ embeds: [timeoutEmbed] }).then(msg => {
+                setTimeout(() => msg.delete().catch(() => {}), 10000);
+            });
+            // Reset counter setelah timeout (opsional, bisa juga biarkan agar tidak timeout terus)
+            userWarnings.delete(userId);
+        } catch (err) {
+            console.error("Gagal melakukan timeout:", err);
+        }
+    }
+    return true;
+}
+
+// =======================
 // 🛠️ HELPER FUNCTIONS
 // =======================
 
@@ -307,6 +373,15 @@ client.on('guildMemberAdd', async (member) => {
 
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
+
+    // =======================
+    // 🚨 ANTI LINK DISCORD (PRIORITAS)
+    // =======================
+    if (discordLinkRegex.test(message.content)) {
+        await handleDiscordLinkViolation(message);
+        return; // Jangan proses lebih lanjut
+    }
+
     const content = message.content.toLowerCase();
 
     if (content === "!help") return message.reply(payloads.help());
