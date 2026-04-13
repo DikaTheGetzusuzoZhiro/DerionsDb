@@ -53,6 +53,7 @@ const scannerChannelId = "1492337144021385336";
 const aiChannelId = "1475164217115021475";
 const welcomeChannelId = "1464775422913941568";
 const staffRoleId = "1466470849266848009";
+const autoRoleId = "1464778755372486717"; // Role yang akan diberikan otomatis saat member join
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
@@ -313,8 +314,7 @@ const commands = [
         .setDescription('Hapus pesan hingga 100 sekaligus (Khusus Staff)'),
     new SlashCommandBuilder()
         .setName('clearalllink')
-        .setDescription('Hapus semua pesan yang mengandung link Discord di channel ini (Khusus Staff)')
-        .addIntegerOption(opt => opt.setName('limit').setDescription('Jumlah pesan terakhir yang diperiksa (max 100, default 100)').setRequired(false)),
+        .setDescription('Hapus SEMUA pesan yang mengandung link Discord di channel ini (Khusus Staff)'),
     new SlashCommandBuilder()
         .setName('upload')
         .setDescription('Upload script/mod ke channel (Khusus Staff)')
@@ -338,10 +338,24 @@ client.once('ready', async () => {
 });
 
 // =======================
-// 👋 EVENT: MEMBER JOIN (WELCOME)
+// 👋 EVENT: MEMBER JOIN (WELCOME + AUTO ROLE)
 // =======================
 
 client.on('guildMemberAdd', async (member) => {
+    // 1. Berikan role otomatis
+    try {
+        const role = member.guild.roles.cache.get(autoRoleId);
+        if (role) {
+            await member.roles.add(role);
+            console.log(`✅ Auto-role diberikan kepada ${member.user.tag} (${role.name})`);
+        } else {
+            console.warn(`⚠️ Role dengan ID ${autoRoleId} tidak ditemukan di server ${member.guild.name}`);
+        }
+    } catch (err) {
+        console.error(`❌ Gagal memberikan auto-role ke ${member.user.tag}:`, err);
+    }
+
+    // 2. Kirim pesan welcome (jika diaktifkan)
     const config = welcomeConfigs.get(member.guild.id);
     if (config && config.enabled === false) return;
 
@@ -510,42 +524,61 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply({ content: `🧹 Berhasil menghapus 100 pesan sekaligus (Batas maksimal Discord API)!`, ephemeral: true });
         }
 
-        // =======================
-        // 🆕 COMMAND /clearalllink
-        // =======================
+        // COMMAND /clearalllink - HAPUS SEMUA LINK DISCORD DI CHANNEL
         if (commandName === 'clearalllink') {
-            await interaction.deferReply({ ephemeral: true }); // biar tidak mengganggu channel
-
-            let limit = interaction.options.getInteger('limit') || 100;
-            if (limit < 1) limit = 1;
-            if (limit > 100) limit = 100;
+            await interaction.deferReply({ ephemeral: true });
 
             const channel = interaction.channel;
-            let deletedCount = 0;
-            let errorCount = 0;
+            let deletedTotal = 0;
+            let batchCount = 0;
+            let lastId = null;
+            let hasMore = true;
+            const maxBatches = 50;
 
             try {
-                // Ambil pesan terakhir sebanyak limit
-                const messages = await channel.messages.fetch({ limit: limit });
-                const toDelete = messages.filter(msg => discordLinkRegex.test(msg.content));
+                while (hasMore && batchCount < maxBatches) {
+                    const fetchOptions = { limit: 100 };
+                    if (lastId) fetchOptions.before = lastId;
+                    
+                    const messages = await channel.messages.fetch(fetchOptions);
+                    if (messages.size === 0) break;
 
-                for (const [id, msg] of toDelete) {
-                    try {
-                        await msg.delete();
-                        deletedCount++;
-                        // sedikit jeda untuk menghindari rate limit
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    } catch (err) {
-                        console.error(`Gagal hapus pesan ${id}:`, err);
-                        errorCount++;
+                    const toDelete = messages.filter(msg => discordLinkRegex.test(msg.content));
+                    
+                    if (toDelete.size === 0) {
+                        lastId = messages.last()?.id;
+                        if (!lastId) break;
+                        batchCount++;
+                        continue;
+                    }
+
+                    for (const [msgId, msg] of toDelete) {
+                        try {
+                            await msg.delete();
+                            deletedTotal++;
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                        } catch (err) {
+                            console.error(`Gagal hapus pesan ${msgId}:`, err);
+                        }
+                    }
+
+                    lastId = messages.last()?.id;
+                    if (!lastId) break;
+                    
+                    batchCount++;
+                    if (batchCount % 5 === 0) {
+                        await interaction.editReply({ content: `🔄 Sedang menghapus... Sudah ${deletedTotal} pesan link dihapus (batch ${batchCount})` });
                     }
                 }
 
-                const resultMsg = `✅ Berhasil menghapus **${deletedCount}** pesan yang mengandung link Discord dari ${limit} pesan terakhir.${errorCount > 0 ? `\n⚠️ ${errorCount} pesan gagal dihapus (mungkin bukan punya bot atau sudah terhapus).` : ''}`;
+                let resultMsg = `✅ Selesai! Total **${deletedTotal}** pesan yang mengandung link Discord telah dihapus dari channel ini.`;
+                if (batchCount >= maxBatches) {
+                    resultMsg += `\n⚠️ Proses dihentikan sementara karena mencapai batas batch (${maxBatches} batch). Mungkin masih ada link yang lebih tua. Jalankan lagi jika perlu.`;
+                }
                 await interaction.editReply({ content: resultMsg });
             } catch (err) {
                 console.error("Error clearalllink:", err);
-                await interaction.editReply({ content: "❌ Terjadi error saat mengambil atau menghapus pesan." });
+                await interaction.editReply({ content: "❌ Terjadi error saat mengambil atau menghapus pesan. Mungkin channel terlalu padat atau bot kehilangan izin." });
             }
             return;
         }
