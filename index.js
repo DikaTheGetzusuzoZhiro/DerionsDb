@@ -398,7 +398,7 @@ client.on("messageCreate", async (message) => {
         const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
 
         if (!isAllowed) {
-            return message.reply({ embeds: [new EmbedBuilder().setTitle("⚠️ Format File Tidak Didukung").setColor(0xff0000).setDescription("Hanya: .lua, .txt, .zip, .7z").setTimestamp()] });
+            return message.reply({ embeds: [new EmbedBuilder().setTitle("⚠️ Format File Tidak Didukung").setColor(0xff0000).setDescription("Hanya: .lua").setTimestamp()] });
         }
 
         try {
