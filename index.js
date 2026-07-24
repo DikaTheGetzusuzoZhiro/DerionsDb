@@ -57,7 +57,7 @@ const autoRoleId = "1464778755372486717"; // Role yang akan diberikan otomatis s
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
-const WELCOME_BG_URL = "https://cdn.discordapp.com/attachments/1464776243324125399/1494239246599323719/icegif-421.gif?ex=69e1e23e&is=69e090be&hm=ae3ff62b75ebc0f487dae5c47f50f238085ffb233e6613131e1418e419dbeda8&";
+const WELCOME_BG_URL = "https://cdn.discordapp.com/attachments/1464926536045170872/1530300153322278922/how-to-make-gif-for-discord-4.gif?ex=6a651294&is=6a63c114&hm=3ee98a6905a0e3a5c9fcf5b92bc83a832fc9e916878ab27b2d647f4dc97393b6&";
 
 const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50, 5: 100 };
 const detectionPatterns = [
