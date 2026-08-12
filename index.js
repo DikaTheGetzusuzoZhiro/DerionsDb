@@ -1,34 +1,35 @@
 require('dotenv').config();
-const { 
-    Client, 
-    GatewayIntentBits, 
-    Partials, 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    StringSelectMenuBuilder, 
-    ModalBuilder, 
-    TextInputBuilder, 
+
+const {
+    Client,
+    GatewayIntentBits,
+    Partials,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
     TextInputStyle,
-    REST, 
-    Routes, 
+    REST,
+    Routes,
     SlashCommandBuilder,
-    ChannelType
+    ChannelType,
+    PermissionFlagsBits
 } = require('discord.js');
+
 const axios = require('axios');
-const Groq = require('groq-sdk');
 
 // =======================
-// ⚙️ INITIALIZATION & ENV
+// ⚙️ INITIALIZATION
 // =======================
 
 const TOKEN = process.env.TOKEN || process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 if (!TOKEN || !CLIENT_ID) {
-    console.error("❌ TOKEN / CLIENT_ID belum di set di Environment Variables!");
+    console.error('❌ TOKEN / CLIENT_ID belum di-set di Environment Variables!');
     process.exit(1);
 }
 
@@ -39,397 +40,838 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers
     ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
+    partials: [
+        Partials.Message,
+        Partials.Channel,
+        Partials.GuildMember
+    ]
 });
 
-const groq = new Groq({ apiKey: GROQ_API_KEY });
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 // =======================
 // 🔒 CONFIGURATION
 // =======================
 
-const scannerChannelId = "1492337144021385336";
-const aiChannelId = "1475164217115021475";
-const welcomeChannelId = "1464775422913941568";
-const staffRoleId = "1466470849266848009";
-const autoRoleId = "1464778755372486717"; // Role yang akan diberikan otomatis saat member join
+const scannerChannelId = '1492337144021385336';
+const welcomeChannelId = '1464775422913941568';
 
-const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
+const staffRoleId = '1466470849266848009';
+const autoRoleId = '1464778755372486717';
 
-// Ganti URL welcome background dengan yang baru (placeholder)
-const WELCOME_BG_URL = "https://cdn.discordapp.com/attachments/1464926536045170872/1530300153322278922/how-to-make-gif-for-discord-4.gif?ex=6a651294&is=6a63c114&hm=3ee98a6905a0e3a5c9fcf5b92bc83a832fc9e916878ab27b2d647f4dc97393b6&"; // <-- URL diganti
-
-const severityWeight = { 1: 8, 2: 18, 3: 30, 4: 50, 5: 100 };
-const detectionPatterns = [
-    { regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i, desc: "Link Discord Webhook", sev: 5 },
-    { regex: /api\.telegram\.org\/bot/i, desc: "Link API Telegram Bot", sev: 5 },
-    { regex: /\b(password|username|webhook|telegram)\b/i, desc: "Kata Kunci Pencurian Data", sev: 5 },
-    { regex: /\bsampGetPlayer(?:Nickname|Name)\b/i, desc: "Fungsi Pencurian Nama Player", sev: 5 },
-    { regex: /\b(?:os\.execute|exec|io\.popen)\b/i, desc: "Eksekusi Command OS", sev: 4 },
-    { regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i, desc: "Eksekusi Kode Dinamis", sev: 4 },
-    { regex: /moonsec|protected with moonsec/i, desc: "MoonSec protection (Obfuscator)", sev: 3 },
-    { regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i, desc: "Obfuscation / Anti-Debug", sev: 3 },
-    { regex: /require\s*\(\s*['"]socket['"]\s*\)/i, desc: "Koneksi Jaringan Socket", sev: 3 },
-    { regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/, desc: "Base64 Encoded Blob", sev: 3 },
-    { regex: /loadstring/i, desc: "Loadstring Keyword", sev: 1 }
+const allowedExtensions = [
+    '.lua',
+    '.txt',
+    '.zip',
+    '.7z'
 ];
 
+const WELCOME_BG_URL =
+    'https://cdn.discordapp.com/attachments/1464926536045170872/1530300153322278922/how-to-make-gif-for-discord-4.gif';
+
+// =======================
+// 🧠 MEMORY
+// =======================
+
 const csSessions = new Map();
-const spamConfigs = new Map();
-const activeSpams = new Map();
 const welcomeConfigs = new Map();
-const userWarnings = new Map(); // Untuk anti link Discord
 
 // =======================
-// 🛡️ ANTI LINK DISCORD (OTOMATIS)
-// =======================
-const discordLinkRegex = /https?:\/\/(?:www\.)?(?:discord(?:app)?\.com|discord\.gg)\/[^\s]+/gi;
-
-async function handleDiscordLinkViolation(message) {
-    if (message.author.bot) return false;
-    const member = message.member;
-    if (member && member.roles.cache.has(staffRoleId)) return false;
-
-    const userId = message.author.id;
-    const now = Date.now();
-
-    let userData = userWarnings.get(userId);
-    if (!userData) {
-        userData = { count: 0, lastWarningTime: now };
-    }
-
-    try {
-        await message.delete();
-    } catch (err) {
-        console.error("Gagal hapus pesan link Discord:", err);
-    }
-
-    const warningEmbed = new EmbedBuilder()
-        .setColor(0xffa500)
-        .setTitle("⚠️ Peringatan! Dilarang Share Link Discord")
-        .setDescription(`${message.author}, kamu tidak diperbolehkan mengirim link Discord di server ini.`)
-        .addFields({ name: "Pelanggaran ke", value: `${userData.count + 1}`, inline: true })
-        .setFooter({ text: "Jika mencapai 2x, akan di-timeout 30 menit" })
-        .setTimestamp();
-    await message.channel.send({ embeds: [warningEmbed] }).then(msg => {
-        setTimeout(() => msg.delete().catch(() => {}), 5000);
-    });
-
-    userData.count++;
-    userData.lastWarningTime = now;
-    userWarnings.set(userId, userData);
-
-    if (userData.count >= 2) {
-        try {
-            await member.timeout(30 * 60 * 1000, "Mengirim link Discord sebanyak 2 kali");
-            const timeoutEmbed = new EmbedBuilder()
-                .setColor(0xff0000)
-                .setTitle("🔇 Timeout Diterapkan")
-                .setDescription(`${message.author} telah di-timeout selama 30 menit karena mengirim link Discord sebanyak 2 kali.`)
-                .setTimestamp();
-            await message.channel.send({ embeds: [timeoutEmbed] }).then(msg => {
-                setTimeout(() => msg.delete().catch(() => {}), 10000);
-            });
-            userWarnings.delete(userId);
-        } catch (err) {
-            console.error("Gagal melakukan timeout:", err);
-        }
-    }
-    return true;
-}
-
-// =======================
-// 🛠️ HELPER FUNCTIONS
+// 🔍 SECURITY SCANNER
 // =======================
 
-async function generateAIResponse(input) {
-    if (!GROQ_API_KEY) return "API Key Groq belum diatur!";
-    try {
-        const response = await axios.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-                model: "llama-3.1-8b-instant",
-                messages: [
-                    {
-                        role: "system",
-                        content: `Kamu adalah asisten AI. Aturan utamamu:
-1. Jawab pertanyaan pengguna dengan singkat, padat, dan jelas.
-2. Jawab semua pertanyaan dengan baik layaknya AI.
-3. Sesuaikan sikapmu: Jika sopan balas ramah, jika toxic balas nyolot dan sarkas.
-4. Info Konteks Real-time: Saat ini adalah hari Sabtu, 11 April 2026, pukul 09:39 WIB. Posisi server di Banjarnegara, Jawa Tengah, Indonesia. Gunakan informasi ini jika pengguna bertanya soal waktu atau lokasi tanpa perlu mengarahkan mereka untuk menggunakan command tertentu.`
-                    },
-                    { role: "user", content: input }
-                ],
-                temperature: 0.7
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${GROQ_API_KEY}`,
-                    "Content-Type": "application/json"
-                }
-            }
-        );
-        return response.data.choices[0].message.content;
-    } catch (err) {
-        console.error("Groq Chat Error:", err);
-        return "Aduh, otak AI aku lagi error nih. Coba lagi nanti ya!";
+const severityWeight = {
+    1: 8,
+    2: 18,
+    3: 30,
+    4: 50,
+    5: 100
+};
+
+const detectionPatterns = [
+    {
+        regex: /discord(?:app)?\.com\/api\/webhooks\/[A-Za-z0-9\/_\-]+/i,
+        desc: 'Link Discord Webhook',
+        sev: 5
+    },
+    {
+        regex: /api\.telegram\.org\/bot/i,
+        desc: 'Link API Telegram Bot',
+        sev: 5
+    },
+    {
+        regex: /\b(password|username|webhook|telegram)\b/i,
+        desc: 'Kata Kunci Pencurian Data',
+        sev: 5
+    },
+    {
+        regex: /\bsampGetPlayer(?:Nickname|Name)\b/i,
+        desc: 'Fungsi Pencurian Nama Player',
+        sev: 5
+    },
+    {
+        regex: /\b(?:os\.execute|exec|io\.popen)\b/i,
+        desc: 'Eksekusi Command OS',
+        sev: 4
+    },
+    {
+        regex: /\b(?:loadstring|loadfile|dofile|load)\b\s*\(/i,
+        desc: 'Eksekusi Kode Dinamis',
+        sev: 4
+    },
+    {
+        regex: /moonsec|protected with moonsec/i,
+        desc: 'MoonSec Protection / Obfuscator',
+        sev: 3
+    },
+    {
+        regex: /luaobfuscator|obfuscate|anti[-_ ]debug/i,
+        desc: 'Obfuscation / Anti-Debug',
+        sev: 3
+    },
+    {
+        regex: /require\s*\(\s*['"]socket['"]\s*\)/i,
+        desc: 'Koneksi Jaringan Socket',
+        sev: 3
+    },
+    {
+        regex: /(?:[A-Za-z0-9+\/]{100,}={0,2})/,
+        desc: 'Base64 Encoded Blob',
+        sev: 3
+    },
+    {
+        regex: /loadstring/i,
+        desc: 'Loadstring Keyword',
+        sev: 1
     }
-}
+];
 
 function analyzeContent(text) {
     const matches = [];
-    const extractedData = []; 
+    const extractedData = [];
     let rawScore = 0;
 
-    const webhookRegex = /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi;
-    const teleRegex = /([0-9]{8,10}:[a-zA-Z0-9_-]{35})/gi; 
+    const webhookRegex =
+        /https?:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+/gi;
+
+    const teleRegex =
+        /([0-9]{8,10}:[a-zA-Z0-9_-]{35})/gi;
 
     const foundWebhooks = text.match(webhookRegex);
-    if (foundWebhooks) extractedData.push(...foundWebhooks);
 
-    const foundTeleTokens = text.match(teleRegex);
-    if (foundTeleTokens) {
-        foundTeleTokens.forEach(token => extractedData.push(`Telegram Token: ${token}`));
+    if (foundWebhooks) {
+        extractedData.push(...foundWebhooks);
     }
 
-    detectionPatterns.forEach(p => {
-        if (p.regex.test(text)) {
-            matches.push(`• ${p.desc} (level ${p.sev})`);
-            rawScore += severityWeight[p.sev];
-        }
-    });
+    const foundTeleTokens = text.match(teleRegex);
 
-    let percent = Math.min(100, rawScore);
-    let status = "🟢 Aman";
+    if (foundTeleTokens) {
+        foundTeleTokens.forEach(token => {
+            extractedData.push(`Telegram Token: ${token}`);
+        });
+    }
+
+    for (const pattern of detectionPatterns) {
+        pattern.regex.lastIndex = 0;
+
+        if (pattern.regex.test(text)) {
+            matches.push(
+                `• ${pattern.desc} (level ${pattern.sev})`
+            );
+
+            rawScore += severityWeight[pattern.sev];
+        }
+    }
+
+    const percent = Math.min(100, rawScore);
+
+    let status = '🟢 Aman';
     let color = 0x00ff00;
 
-    if (percent >= 80) { status = "🔴 BAHAYA TINGGI"; color = 0xff0000; } 
-    else if (percent >= 50) { status = "🟠 SANGAT MENCURIGAKAN"; color = 0xff8800; } 
-    else if (percent >= 20) { status = "🟡 MENCURIGAKAN"; color = 0xffcc00; }
+    if (percent >= 80) {
+        status = '🔴 Berbahaya';
+        color = 0xff0000;
+    } else if (percent >= 50) {
+        status = '🟠 Risiko Tinggi';
+        color = 0xff8800;
+    } else if (percent >= 20) {
+        status = '🟡 Mencurigakan';
+        color = 0xffcc00;
+    }
 
-    if (matches.length === 0) matches.push("Tidak ditemukan pola mencurigakan");
-    return { percent, status, color, detail: matches.join("\n"), extractedData };
+    if (matches.length === 0) {
+        matches.push(
+            'Tidak ditemukan pola mencurigakan.'
+        );
+    }
+
+    return {
+        percent,
+        status,
+        color,
+        detail: matches.join('\n'),
+        extractedData
+    };
 }
 
+// =======================
+// 📦 PAYLOADS
+// =======================
+
 const payloads = {
+
     help: () => ({
-        embeds: [new EmbedBuilder()
-            .setColor('#00d2ff')
-            .setTitle('🌟 Pusat Komando & Panduan Bot 🌟')
-            .setDescription('Selamat datang di sistem asisten otomatis!\nBerikut adalah direktori lengkap fitur yang tersedia.')
-            .addFields(
-                { name: '🎮 Roleplay & Utilitas', value: '`!cs` atau `/cs` - Buat Character Story.\n`!panelspam` atau `/panelspam` - Panel spam target keylogger.', inline: false },
-                { name: '🤖 Fitur Otomatis', value: '📁 **Cek Keylogger** - Kirim file ke channel scanner.\n💬 **AI Chat** - Kirim pesan di channel AI, otomatis dijawab.', inline: false },
-                { name: '🔒 Khusus Staff', value: '`/upload` - Rilis script.\n`/ban`, `/kick`, `/timeout`, `/clear`, `/clearall` - Moderasi server.\n`/status` - Cek ping & sistem.\n`/welcome` - Nyalakan/matikan welcome.', inline: false }
-            )
-            .setFooter({ text: 'Tatang Community System', iconURL: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' })
-            .setTimestamp()]
-    }),
-    status: (client) => ({
-        embeds: [new EmbedBuilder()
-            .setColor('#2ecc71')
-            .setTitle('📊 Metrik & Status Operasional Server')
-            .addFields(
-                { name: '📡 Ping:', value: `\`${client ? client.ws.ping : 0}ms\` 🟢`, inline: true },
-                { name: '🤖 Core:', value: '`🟢 Online`', inline: true },
-                { name: '🧠 AI Engine:', value: '`🟢 Aktif`', inline: true }
-            )
-            .setFooter({ text: 'Tatang Community System' })
-            .setTimestamp()]
-    }),
-    panelspam: () => ({
-        embeds: [new EmbedBuilder()
-            .setTitle('💣 Panel Spam Target Keylogger')
-            .setColor('#e74c3c')
-            .setDescription('**Panel Spam Webhook & Telegram**\nFitur untuk membanjiri target pembuat keylogger.')
-            .setFooter({ text: 'Created By TATANG COMUNITY' })],
-        components: [
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('spam_set_webhook').setLabel('Set Webhook').setStyle(ButtonStyle.Secondary).setEmoji('🌐'),
-                new ButtonBuilder().setCustomId('spam_set_tele').setLabel('Set Token Tele').setStyle(ButtonStyle.Secondary).setEmoji('✈️')
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('spam_start').setLabel('Mulai Spam').setStyle(ButtonStyle.Success).setEmoji('▶️'),
-                new ButtonBuilder().setCustomId('spam_stop').setLabel('Stop Spam').setStyle(ButtonStyle.Danger).setEmoji('⏹️')
-            )
+        embeds: [
+            new EmbedBuilder()
+                .setColor('#00d2ff')
+                .setTitle('🌟 TAMA COMMUNITY')
+                .setDescription(
+                    'Pusat bantuan dan daftar fitur bot.'
+                )
+                .addFields(
+                    {
+                        name: '🎮 Roleplay',
+                        value:
+                            '`/cs` — Membuat Character Story.',
+                        inline: false
+                    },
+                    {
+                        name: '🛡️ Security',
+                        value:
+                            'File Scanner — Memeriksa file yang dikirim ke channel scanner.',
+                        inline: false
+                    },
+                    {
+                        name: '📊 Informasi',
+                        value:
+                            '`/status` — Status bot.\n' +
+                            '`/serverinfo` — Informasi server.\n' +
+                            '`/userinfo` — Informasi member.\n' +
+                            '`/avatar` — Melihat avatar member.',
+                        inline: false
+                    },
+                    {
+                        name: '🔒 Staff',
+                        value:
+                            '`/ban` — Ban member.\n' +
+                            '`/kick` — Kick member.\n' +
+                            '`/timeout` — Timeout member.\n' +
+                            '`/clear` — Hapus pesan.\n' +
+                            '`/clearall` — Hapus hingga 100 pesan.\n' +
+                            '`/welcome` — Atur welcome.\n' +
+                            '`/announce` — Kirim pengumuman.\n' +
+                            '`/role` — Kelola role member.\n' +
+                            '`/upload` — Rilis script.',
+                        inline: false
+                    }
+                )
+                .setFooter({
+                    text: 'TAMA COMMUNITY'
+                })
+                .setTimestamp()
         ]
     }),
+
+    status: () => ({
+        embeds: [
+            new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('📊 STATUS BOT')
+                .addFields(
+                    {
+                        name: '📡 Ping',
+                        value: `\`${client.ws.ping}ms\``,
+                        inline: true
+                    },
+                    {
+                        name: '🤖 Bot',
+                        value: '`🟢 Online`',
+                        inline: true
+                    },
+                    {
+                        name: '🛡️ Security',
+                        value: '`🟢 Aktif`',
+                        inline: true
+                    }
+                )
+                .setFooter({
+                    text: 'TAMA COMMUNITY • System Status'
+                })
+                .setTimestamp()
+        ]
+    }),
+
     cs: () => ({
-        embeds: [new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle('📝 Panel Pembuatan Character Story')
-            .setDescription('Tekan tombol di bawah untuk memulai proses pembuatan **Character Story (CS)**.')
-            .setFooter({ text: 'Created By TATANG COMUNITY' })],
+        embeds: [
+            new EmbedBuilder()
+                .setColor('#2b2d31')
+                .setTitle('📝 CHARACTER STORY')
+                .setDescription(
+                    'Buat karakter roleplay dengan mengisi informasi yang tersedia.'
+                )
+                .setFooter({
+                    text: 'TAMA COMMUNITY'
+                })
+        ],
         components: [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('start_cs').setLabel('Buat Character Story').setEmoji('📝').setStyle(ButtonStyle.Primary)
+                new ButtonBuilder()
+                    .setCustomId('start_cs')
+                    .setLabel('Buat Character Story')
+                    .setEmoji('📝')
+                    .setStyle(ButtonStyle.Primary)
             )
         ]
     })
 };
 
 // =======================
-// 📜 SLASH COMMANDS REGISTRATION
+// 📜 SLASH COMMANDS
 // =======================
 
 const commands = [
-    new SlashCommandBuilder().setName('help').setDescription('Tampilkan menu bantuan bot'),
-    new SlashCommandBuilder().setName('panelspam').setDescription('Tampilkan panel spam target keylogger'),
-    new SlashCommandBuilder().setName('cs').setDescription('Buka panel pembuatan Character Story (CS)'),
-    new SlashCommandBuilder().setName('status').setDescription('Cek status bot'),
+
     new SlashCommandBuilder()
-        .setName('ques')
-        .setDescription('Tanya sesuatu ke AI Groq secara langsung')
-        .addStringOption(opt => opt.setName('pertanyaan').setDescription('Masukkan pertanyaan kamu').setRequired(true)),
+        .setName('help')
+        .setDescription('Tampilkan bantuan bot'),
+
+    new SlashCommandBuilder()
+        .setName('cs')
+        .setDescription('Buat Character Story'),
+
+    new SlashCommandBuilder()
+        .setName('status')
+        .setDescription('Cek status bot'),
+
+    // FITUR 1
+    new SlashCommandBuilder()
+        .setName('serverinfo')
+        .setDescription('Lihat informasi server'),
+
+    // FITUR 2
+    new SlashCommandBuilder()
+        .setName('userinfo')
+        .setDescription('Lihat informasi member')
+        .addUserOption(opt =>
+            opt
+                .setName('target')
+                .setDescription('Member yang ingin dilihat')
+                .setRequired(false)
+        ),
+
+    // FITUR 3
+    new SlashCommandBuilder()
+        .setName('avatar')
+        .setDescription('Lihat avatar member')
+        .addUserOption(opt =>
+            opt
+                .setName('target')
+                .setDescription('Member yang ingin dilihat')
+                .setRequired(false)
+        ),
+
     new SlashCommandBuilder()
         .setName('welcome')
-        .setDescription('Nyalakan atau matikan pesan welcome otomatis')
-        .addStringOption(opt => opt.setName('status').setDescription('Pilih On atau Off').setRequired(true).addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' })),
+        .setDescription('Atur welcome otomatis')
+        .addStringOption(opt =>
+            opt
+                .setName('status')
+                .setDescription('Pilih status')
+                .setRequired(true)
+                .addChoices(
+                    {
+                        name: 'On',
+                        value: 'on'
+                    },
+                    {
+                        name: 'Off',
+                        value: 'off'
+                    }
+                )
+        ),
+
     new SlashCommandBuilder()
         .setName('ban')
-        .setDescription('Ban member (Khusus Staff)')
-        .addUserOption(opt => opt.setName('target').setDescription('Member yang di-ban').setRequired(true))
-        .addStringOption(opt => opt.setName('alasan').setDescription('Alasan ban').setRequired(true)),
+        .setDescription('Ban member — Staff')
+        .addUserOption(opt =>
+            opt
+                .setName('target')
+                .setDescription('Member yang akan diban')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('alasan')
+                .setDescription('Alasan ban')
+                .setRequired(true)
+        ),
+
     new SlashCommandBuilder()
         .setName('kick')
-        .setDescription('Kick member (Khusus Staff)')
-        .addUserOption(opt => opt.setName('target').setDescription('Member yang di-kick').setRequired(true))
-        .addStringOption(opt => opt.setName('alasan').setDescription('Alasan kick').setRequired(true)),
+        .setDescription('Kick member — Staff')
+        .addUserOption(opt =>
+            opt
+                .setName('target')
+                .setDescription('Member yang akan dikick')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('alasan')
+                .setDescription('Alasan kick')
+                .setRequired(true)
+        ),
+
     new SlashCommandBuilder()
         .setName('timeout')
-        .setDescription('Timeout member (Khusus Staff)')
-        .addUserOption(opt => opt.setName('target').setDescription('Member yang di-timeout').setRequired(true))
-        .addIntegerOption(opt => opt.setName('durasi').setDescription('Durasi dalam menit').setRequired(true))
-        .addStringOption(opt => opt.setName('alasan').setDescription('Alasan timeout').setRequired(true)),
+        .setDescription('Timeout member — Staff')
+        .addUserOption(opt =>
+            opt
+                .setName('target')
+                .setDescription('Member yang akan di-timeout')
+                .setRequired(true)
+        )
+        .addIntegerOption(opt =>
+            opt
+                .setName('durasi')
+                .setDescription('Durasi dalam menit')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('alasan')
+                .setDescription('Alasan timeout')
+                .setRequired(true)
+        ),
+
     new SlashCommandBuilder()
         .setName('clear')
-        .setDescription('Hapus sejumlah pesan (Khusus Staff)')
-        .addIntegerOption(opt => opt.setName('jumlah').setDescription('Jumlah pesan yang dihapus (1-100)').setRequired(true)),
+        .setDescription('Hapus pesan — Staff')
+        .addIntegerOption(opt =>
+            opt
+                .setName('jumlah')
+                .setDescription('Jumlah pesan 1-100')
+                .setRequired(true)
+        ),
+
     new SlashCommandBuilder()
         .setName('clearall')
-        .setDescription('Hapus pesan hingga 100 sekaligus (Khusus Staff)'),
+        .setDescription('Hapus hingga 100 pesan — Staff'),
+
+    // FITUR 4
+    new SlashCommandBuilder()
+        .setName('announce')
+        .setDescription('Kirim pengumuman — Staff')
+        .addChannelOption(opt =>
+            opt
+                .setName('channel')
+                .setDescription('Channel tujuan')
+                .addChannelTypes(ChannelType.GuildText)
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('judul')
+                .setDescription('Judul pengumuman')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('pesan')
+                .setDescription('Isi pengumuman')
+                .setRequired(true)
+        ),
+
+    // FITUR 5
+    new SlashCommandBuilder()
+        .setName('role')
+        .setDescription('Kelola role member — Staff')
+        .addSubcommand(sub =>
+            sub
+                .setName('add')
+                .setDescription('Berikan role')
+                .addUserOption(opt =>
+                    opt
+                        .setName('target')
+                        .setDescription('Member')
+                        .setRequired(true)
+                )
+                .addRoleOption(opt =>
+                    opt
+                        .setName('role')
+                        .setDescription('Role')
+                        .setRequired(true)
+                )
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('remove')
+                .setDescription('Hapus role')
+                .addUserOption(opt =>
+                    opt
+                        .setName('target')
+                        .setDescription('Member')
+                        .setRequired(true)
+                )
+                .addRoleOption(opt =>
+                    opt
+                        .setName('role')
+                        .setDescription('Role')
+                        .setRequired(true)
+                )
+        ),
+
+    // UPLOAD — TIDAK DIUBAH
     new SlashCommandBuilder()
         .setName('upload')
         .setDescription('Upload script/mod ke channel (Khusus Staff)')
-        .addChannelOption(opt => opt.setName('channel').setDescription('Pilih channel tujuan').addChannelTypes(ChannelType.GuildText).setRequired(true))
-        .addStringOption(opt => opt.setName('judul').setDescription('Judul Script').setRequired(true))
-        .addStringOption(opt => opt.setName('cmd').setDescription('Command game').setRequired(true))
-        .addStringOption(opt => opt.setName('deskripsi').setDescription('Deskripsi script').setRequired(true))
-        .addStringOption(opt => opt.setName('credit').setDescription('Credit pembuat').setRequired(true))
-        .addStringOption(opt => opt.setName('download').setDescription('Link download').setRequired(true))
-        .addAttachmentOption(opt => opt.setName('gambar').setDescription('Upload gambar (optional)').setRequired(false))
+        .addChannelOption(opt =>
+            opt
+                .setName('channel')
+                .setDescription('Pilih channel tujuan')
+                .addChannelTypes(ChannelType.GuildText)
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('judul')
+                .setDescription('Judul Script')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('cmd')
+                .setDescription('Command game')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('deskripsi')
+                .setDescription('Deskripsi script')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('credit')
+                .setDescription('Credit pembuat')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt
+                .setName('download')
+                .setDescription('Link download')
+                .setRequired(true)
+        )
+        .addAttachmentOption(opt =>
+            opt
+                .setName('gambar')
+                .setDescription('Upload gambar (optional)')
+                .setRequired(false)
+        )
+
 ].map(cmd => cmd.toJSON());
 
+// =======================
+// 🚀 READY
+// =======================
+
 client.once('ready', async () => {
-    console.log(`🔥 Bot aktif sebagai ${client.user.tag}`);
+
+    console.log(
+        `🔥 TAMA COMMUNITY BOT aktif sebagai ${client.user.tag}`
+    );
+
     try {
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('✅ Slash Commands berhasil diregister!');
+
+        await rest.put(
+            Routes.applicationCommands(CLIENT_ID),
+            {
+                body: commands
+            }
+        );
+
+        console.log(
+            '✅ Slash Commands berhasil diregister!'
+        );
+
     } catch (err) {
-        console.error('❌ Gagal register Slash Command:', err);
+
+        console.error(
+            '❌ Gagal register Slash Commands:',
+            err
+        );
     }
 });
 
 // =======================
-// 👋 EVENT: MEMBER JOIN (WELCOME + AUTO ROLE)
+// 👋 MEMBER JOIN
 // =======================
 
-client.on('guildMemberAdd', async (member) => {
-    // 1. Berikan role otomatis
+client.on('guildMemberAdd', async member => {
+
+    // AUTO ROLE
     try {
-        const role = member.guild.roles.cache.get(autoRoleId);
+
+        const role =
+            member.guild.roles.cache.get(
+                autoRoleId
+            );
+
         if (role) {
+
             await member.roles.add(role);
-            console.log(`✅ Auto-role diberikan kepada ${member.user.tag} (${role.name})`);
-        } else {
-            console.warn(`⚠️ Role dengan ID ${autoRoleId} tidak ditemukan di server ${member.guild.name}`);
+
+            console.log(
+                `✅ Auto-role diberikan kepada ${member.user.tag}`
+            );
+
         }
+
     } catch (err) {
-        console.error(`❌ Gagal memberikan auto-role ke ${member.user.tag}:`, err);
+
+        console.error(
+            '❌ Gagal memberikan auto-role:',
+            err
+        );
     }
 
-    // 2. Kirim pesan welcome (jika diaktifkan)
-    const config = welcomeConfigs.get(member.guild.id);
-    if (config && config.enabled === false) return;
+    // WELCOME
+    const config =
+        welcomeConfigs.get(
+            member.guild.id
+        );
 
-    const channel = member.guild.channels.cache.get(welcomeChannelId);
-    if (!channel) return;
-
-    const embed = new EmbedBuilder()
-        .setColor('#00d2ff')
-        .setTitle(`👋 Welcome to ${member.guild.name}!`)
-        .setDescription(`Halo ${member}, selamat bergabung dengan komunitas kami!\n\nJangan lupa baca peraturan dan nikmati waktumu di sini.`)
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }))
-        .setImage(WELCOME_BG_URL) // <-- URL baru digunakan di sini
-        .setFooter({ text: `Member #${member.guild.memberCount}` })
-        .setTimestamp();
-
-    await channel.send({ content: `Hai ${member}!`, embeds: [embed] });
-});
-
-// =======================
-// 💬 MESSAGE LISTENER
-// =======================
-
-client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
-
-    // ANTI LINK DISCORD OTOMATIS
-    if (discordLinkRegex.test(message.content)) {
-        await handleDiscordLinkViolation(message);
+    if (
+        config &&
+        config.enabled === false
+    ) {
         return;
     }
 
-    const content = message.content.toLowerCase();
+    const channel =
+        member.guild.channels.cache.get(
+            welcomeChannelId
+        );
 
-    if (content === "!help") return message.reply(payloads.help());
-    if (content === "!panelspam") return message.channel.send(payloads.panelspam());
-    if (content === "!cs") return message.channel.send(payloads.cs());
+    if (!channel) return;
 
-    // AI CHANNEL - BALAS SEMUA PESAN TANPA PERINTAH !ai
-    if (message.channel.id === aiChannelId) {
-        const aiResponse = await generateAIResponse(message.content);
-        return message.reply(aiResponse);
+    const embed =
+        new EmbedBuilder()
+            .setColor('#00d2ff')
+            .setTitle(
+                '👋 Selamat Datang!'
+            )
+            .setDescription(
+                `Halo ${member}, selamat datang di **TAMA COMMUNITY**!\n\n` +
+                'Silakan baca peraturan server dan nikmati komunitas kami.'
+            )
+            .setThumbnail(
+                member.user.displayAvatarURL({
+                    dynamic: true,
+                    size: 512
+                })
+            )
+            .setImage(
+                WELCOME_BG_URL
+            )
+            .setFooter({
+                text:
+                    `Member #${member.guild.memberCount} • TAMA COMMUNITY`
+            })
+            .setTimestamp();
+
+    await channel.send({
+        content: `Hai ${member}!`,
+        embeds: [embed]
+    });
+});
+
+// =======================
+// 💬 MESSAGE CREATE
+// =======================
+
+client.on('messageCreate', async message => {
+
+    if (message.author.bot) return;
+
+    const content =
+        message.content
+            .toLowerCase()
+            .trim();
+
+    if (content === '!help') {
+        return message.reply(
+            payloads.help()
+        );
     }
 
-    if (message.channel.id === scannerChannelId && message.attachments.size > 0) {
-        const attachment = message.attachments.first();
-        const fileName = attachment.name.toLowerCase();
-        const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
+    if (content === '!cs') {
+        return message.channel.send(
+            payloads.cs()
+        );
+    }
+
+    // FILE SCANNER
+    if (
+        message.channel.id === scannerChannelId &&
+        message.attachments.size > 0
+    ) {
+
+        const attachment =
+            message.attachments.first();
+
+        const fileName =
+            attachment.name.toLowerCase();
+
+        const isAllowed =
+            allowedExtensions.some(
+                ext =>
+                    fileName.endsWith(ext)
+            );
 
         if (!isAllowed) {
-            return message.reply({ embeds: [new EmbedBuilder().setTitle("⚠️ Format File Tidak Didukung").setColor(0xff0000).setDescription("Hanya: .lua").setTimestamp()] });
+
+            return message.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle(
+                            '⚠️ Format File Tidak Didukung'
+                        )
+                        .setColor(0xff0000)
+                        .setDescription(
+                            'File yang diperbolehkan: `.lua`, `.txt`, `.zip`, `.7z`'
+                        )
+                        .setFooter({
+                            text: 'TAMA COMMUNITY'
+                        })
+                        .setTimestamp()
+                ]
+            });
         }
 
         try {
-            const response = await axios.get(attachment.url, { responseType: "arraybuffer" });
-            const contentFile = Buffer.from(response.data).toString("utf8");
-            const result = analyzeContent(contentFile);
 
-            const embed = new EmbedBuilder()
-                .setTitle("🛡️ Hasil Analisis Keamanan")
-                .setColor(result.color)
-                .addFields(
-                    { name: "👤 Pengguna", value: `${message.author}` },
-                    { name: "📄 Nama File", value: attachment.name },
-                    { name: "📦 Ukuran", value: `${(attachment.size / 1024).toFixed(2)} KB` },
-                    { name: "📊 Status", value: result.status },
-                    { name: "⚠️ Risiko", value: `${result.percent}%` },
-                    { name: "🔎 Detail", value: result.detail }
-                )
-                .setFooter({ text: "Deteksi by TATANG COMUNITY" })
-                .setTimestamp();
+            const response =
+                await axios.get(
+                    attachment.url,
+                    {
+                        responseType:
+                            'arraybuffer'
+                    }
+                );
 
-            await message.reply({ embeds: [embed] });
+            const contentFile =
+                Buffer.from(
+                    response.data
+                ).toString('utf8');
 
-            if (result.extractedData && result.extractedData.length > 0) {
-                const uniqueLinks = [...new Set(result.extractedData)].join("\n");
-                await message.channel.send(`🚨 **PERINGATAN! TARGET BERBAHAYA!** 🚨\n\`\`\`txt\n${uniqueLinks}\n\`\`\`\n*Segera gunakan \`/panelspam\`!*`);
+            const result =
+                analyzeContent(
+                    contentFile
+                );
+
+            const embed =
+                new EmbedBuilder()
+                    .setTitle(
+                        '🛡️ Hasil Pemeriksaan File'
+                    )
+                    .setColor(
+                        result.color
+                    )
+                    .addFields(
+                        {
+                            name: '👤 Pengirim',
+                            value:
+                                `${message.author}`
+                        },
+                        {
+                            name: '📄 Nama File',
+                            value:
+                                attachment.name
+                        },
+                        {
+                            name: '📦 Ukuran',
+                            value:
+                                `${(attachment.size / 1024).toFixed(2)} KB`
+                        },
+                        {
+                            name: '📊 Status',
+                            value:
+                                result.status
+                        },
+                        {
+                            name: '⚠️ Tingkat Risiko',
+                            value:
+                                `${result.percent}%`
+                        },
+                        {
+                            name: '🔎 Hasil Deteksi',
+                            value:
+                                result.detail.substring(
+                                    0,
+                                    1024
+                                )
+                        }
+                    )
+                    .setFooter({
+                        text:
+                            'TAMA COMMUNITY • Security Scanner'
+                    })
+                    .setTimestamp();
+
+            await message.reply({
+                embeds: [embed]
+            });
+
+            if (
+                result.extractedData &&
+                result.extractedData.length > 0
+            ) {
+
+                const uniqueData =
+                    [
+                        ...new Set(
+                            result.extractedData
+                        )
+                    ]
+                        .join('\n')
+                        .substring(
+                            0,
+                            1900
+                        );
+
+                await message.channel.send({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(
+                                0xff0000
+                            )
+                            .setTitle(
+                                '🚨 Indikator Mencurigakan Ditemukan'
+                            )
+                            .setDescription(
+                                `\`\`\`txt\n${uniqueData}\n\`\`\`\n` +
+                                '⚠️ Jangan menggunakan atau menyebarkan data yang terdeteksi.'
+                            )
+                            .setFooter({
+                                text:
+                                    'TAMA COMMUNITY • Security'
+                            })
+                            .setTimestamp()
+                    ]
+                });
             }
+
         } catch (error) {
-            console.error("Scanner Error:", error);
-            message.reply("❌ Gagal membaca file.");
+
+            console.error(
+                '❌ Scanner Error:',
+                error
+            );
+
+            return message.reply(
+                '❌ Gagal membaca file.'
+            );
         }
     }
 });
@@ -438,258 +880,1159 @@ client.on("messageCreate", async (message) => {
 // 🎛️ INTERACTION HANDLER
 // =======================
 
-client.on('interactionCreate', async (interaction) => {
+client.on('interactionCreate', async interaction => {
+
+    // =======================
+    // SLASH COMMAND
+    // =======================
 
     if (interaction.isChatInputCommand()) {
-        const { commandName } = interaction;
-        const isStaff = interaction.member.roles.cache.has(staffRoleId);
 
-        if (commandName === 'help') return interaction.reply(payloads.help());
-        if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
-        if (commandName === 'cs') return interaction.reply(payloads.cs());
-        if (commandName === 'status') return interaction.reply(payloads.status(client));
+        const {
+            commandName
+        } = interaction;
 
-        if (commandName === 'ques') {
-            await interaction.deferReply();
-            const question = interaction.options.getString('pertanyaan');
-            const answer = await generateAIResponse(question);
-            return interaction.editReply(`**Tanya:** ${question}\n**AI:** ${answer}`);
+        const isStaff =
+            interaction.member &&
+            interaction.member.roles.cache.has(
+                staffRoleId
+            );
+
+        // BASIC
+        if (commandName === 'help') {
+            return interaction.reply(
+                payloads.help()
+            );
         }
 
-        // MODERATION COMMANDS (khusus staff)
-        if (['welcome', 'ban', 'kick', 'timeout', 'clear', 'clearall', 'upload'].includes(commandName) && !isStaff) {
-            return interaction.reply({ content: '❌ Akses Ditolak! Kamu tidak memiliki role khusus (Staff).', ephemeral: true });
+        if (commandName === 'cs') {
+            return interaction.reply(
+                payloads.cs()
+            );
         }
+
+        if (commandName === 'status') {
+            return interaction.reply(
+                payloads.status()
+            );
+        }
+
+        // =======================
+        // FITUR 1 — SERVER INFO
+        // =======================
+
+        if (commandName === 'serverinfo') {
+
+            const guild =
+                interaction.guild;
+
+            const owner =
+                await guild.fetchOwner();
+
+            const embed =
+                new EmbedBuilder()
+                    .setColor('#00d2ff')
+                    .setTitle(
+                        '🌐 INFORMASI SERVER'
+                    )
+                    .setThumbnail(
+                        guild.iconURL({
+                            dynamic: true,
+                            size: 512
+                        })
+                    )
+                    .addFields(
+                        {
+                            name: '🏠 Nama Server',
+                            value:
+                                guild.name,
+                            inline: true
+                        },
+                        {
+                            name: '👑 Owner',
+                            value:
+                                `${owner.user.tag}`,
+                            inline: true
+                        },
+                        {
+                            name: '👥 Member',
+                            value:
+                                `${guild.memberCount}`,
+                            inline: true
+                        },
+                        {
+                            name: '💬 Channel',
+                            value:
+                                `${guild.channels.cache.size}`,
+                            inline: true
+                        },
+                        {
+                            name: '🎭 Role',
+                            value:
+                                `${guild.roles.cache.size}`,
+                            inline: true
+                        },
+                        {
+                            name: '📅 Dibuat',
+                            value:
+                                `<t:${Math.floor(guild.createdTimestamp / 1000)}:F>`,
+                            inline: false
+                        }
+                    )
+                    .setFooter({
+                        text:
+                            'TAMA COMMUNITY'
+                    })
+                    .setTimestamp();
+
+            return interaction.reply({
+                embeds: [embed]
+            });
+        }
+
+        // =======================
+        // FITUR 2 — USER INFO
+        // =======================
+
+        if (commandName === 'userinfo') {
+
+            const target =
+                interaction.options.getMember(
+                    'target'
+                ) ||
+                interaction.member;
+
+            const user =
+                target.user;
+
+            const roles =
+                target.roles.cache
+                    .filter(
+                        role =>
+                            role.id !==
+                            interaction.guild.id
+                    )
+                    .map(
+                        role =>
+                            `${role}`
+                    )
+                    .slice(0, 10)
+                    .join(', ') ||
+                'Tidak ada';
+
+            const embed =
+                new EmbedBuilder()
+                    .setColor('#00d2ff')
+                    .setTitle(
+                        '👤 INFORMASI MEMBER'
+                    )
+                    .setThumbnail(
+                        user.displayAvatarURL({
+                            dynamic: true,
+                            size: 512
+                        })
+                    )
+                    .addFields(
+                        {
+                            name: '👤 Username',
+                            value:
+                                user.tag,
+                            inline: true
+                        },
+                        {
+                            name: '🆔 User ID',
+                            value:
+                                user.id,
+                            inline: true
+                        },
+                        {
+                            name: '📅 Akun Dibuat',
+                            value:
+                                `<t:${Math.floor(user.createdTimestamp / 1000)}:D>`,
+                            inline: true
+                        },
+                        {
+                            name: '📥 Bergabung',
+                            value:
+                                target.joinedTimestamp
+                                    ? `<t:${Math.floor(target.joinedTimestamp / 1000)}:D>`
+                                    : 'Tidak diketahui',
+                            inline: true
+                        },
+                        {
+                            name: '🎭 Role',
+                            value:
+                                roles,
+                            inline: false
+                        }
+                    )
+                    .setFooter({
+                        text:
+                            'TAMA COMMUNITY'
+                    })
+                    .setTimestamp();
+
+            return interaction.reply({
+                embeds: [embed]
+            });
+        }
+
+        // =======================
+        // FITUR 3 — AVATAR
+        // =======================
+
+        if (commandName === 'avatar') {
+
+            const target =
+                interaction.options.getUser(
+                    'target'
+                ) ||
+                interaction.user;
+
+            const avatar =
+                target.displayAvatarURL({
+                    extension: 'png',
+                    size: 4096
+                });
+
+            const embed =
+                new EmbedBuilder()
+                    .setColor('#00d2ff')
+                    .setTitle(
+                        `🖼️ AVATAR — ${target.username}`
+                    )
+                    .setImage(avatar)
+                    .setDescription(
+                        `[Buka Avatar](${avatar})`
+                    )
+                    .setFooter({
+                        text:
+                            'TAMA COMMUNITY'
+                    })
+                    .setTimestamp();
+
+            return interaction.reply({
+                embeds: [embed]
+            });
+        }
+
+        // =======================
+        // STAFF CHECK
+        // =======================
+
+        const staffCommands = [
+            'welcome',
+            'ban',
+            'kick',
+            'timeout',
+            'clear',
+            'clearall',
+            'announce',
+            'role',
+            'upload'
+        ];
+
+        if (
+            staffCommands.includes(
+                commandName
+            ) &&
+            !isStaff
+        ) {
+            return interaction.reply({
+                content:
+                    '❌ Akses ditolak! Kamu tidak memiliki izin Staff.',
+                ephemeral: true
+            });
+        }
+
+        // =======================
+        // WELCOME
+        // =======================
 
         if (commandName === 'welcome') {
-            const status = interaction.options.getString('status');
-            const isEnabled = status === 'on';
-            welcomeConfigs.set(interaction.guild.id, { enabled: isEnabled });
-            return interaction.reply({ content: `✅ Fitur Welcome otomatis telah di-${status.toUpperCase()}.`, ephemeral: true });
+
+            const status =
+                interaction.options.getString(
+                    'status'
+                );
+
+            const enabled =
+                status === 'on';
+
+            welcomeConfigs.set(
+                interaction.guild.id,
+                {
+                    enabled
+                }
+            );
+
+            return interaction.reply({
+                content:
+                    enabled
+                        ? '✅ Welcome otomatis berhasil diaktifkan.'
+                        : '✅ Welcome otomatis berhasil dinonaktifkan.',
+                ephemeral: true
+            });
         }
+
+        // =======================
+        // BAN
+        // =======================
 
         if (commandName === 'ban') {
-            const target = interaction.options.getMember('target');
-            const reason = interaction.options.getString('alasan');
-            if (!target) return interaction.reply({ content: "User tidak ditemukan.", ephemeral: true });
-            await target.ban({ reason });
-            return interaction.reply(`🔨 **${target.user.tag}** telah dibanned.\nAlasan: *${reason}*`);
+
+            const target =
+                interaction.options.getMember(
+                    'target'
+                );
+
+            const reason =
+                interaction.options.getString(
+                    'alasan'
+                );
+
+            if (!target) {
+                return interaction.reply({
+                    content:
+                        '❌ Member tidak ditemukan.',
+                    ephemeral: true
+                });
+            }
+
+            await target.ban({
+                reason
+            });
+
+            return interaction.reply(
+                `🔨 **${target.user.tag}** berhasil dibanned.\nAlasan: *${reason}*`
+            );
         }
+
+        // =======================
+        // KICK
+        // =======================
 
         if (commandName === 'kick') {
-            const target = interaction.options.getMember('target');
-            const reason = interaction.options.getString('alasan');
-            if (!target) return interaction.reply({ content: "User tidak ditemukan.", ephemeral: true });
-            await target.kick(reason);
-            return interaction.reply(`👢 **${target.user.tag}** telah dikick.\nAlasan: *${reason}*`);
+
+            const target =
+                interaction.options.getMember(
+                    'target'
+                );
+
+            const reason =
+                interaction.options.getString(
+                    'alasan'
+                );
+
+            if (!target) {
+                return interaction.reply({
+                    content:
+                        '❌ Member tidak ditemukan.',
+                    ephemeral: true
+                });
+            }
+
+            await target.kick(
+                reason
+            );
+
+            return interaction.reply(
+                `👢 **${target.user.tag}** berhasil dikick.\nAlasan: *${reason}*`
+            );
         }
+
+        // =======================
+        // TIMEOUT
+        // =======================
 
         if (commandName === 'timeout') {
-            const target = interaction.options.getMember('target');
-            const durasi = interaction.options.getInteger('durasi');
-            const reason = interaction.options.getString('alasan');
-            if (!target) return interaction.reply({ content: "User tidak ditemukan.", ephemeral: true });
-            await target.timeout(durasi * 60 * 1000, reason);
-            return interaction.reply(`⏱️ **${target.user.tag}** kena timeout selama ${durasi} menit.\nAlasan: *${reason}*`);
+
+            const target =
+                interaction.options.getMember(
+                    'target'
+                );
+
+            const durasi =
+                interaction.options.getInteger(
+                    'durasi'
+                );
+
+            const reason =
+                interaction.options.getString(
+                    'alasan'
+                );
+
+            if (!target) {
+                return interaction.reply({
+                    content:
+                        '❌ Member tidak ditemukan.',
+                    ephemeral: true
+                });
+            }
+
+            if (
+                durasi < 1 ||
+                durasi > 40320
+            ) {
+                return interaction.reply({
+                    content:
+                        '❌ Durasi harus antara 1–40320 menit.',
+                    ephemeral: true
+                });
+            }
+
+            await target.timeout(
+                durasi * 60 * 1000,
+                reason
+            );
+
+            return interaction.reply(
+                `⏱️ **${target.user.tag}** mendapatkan timeout selama ${durasi} menit.\nAlasan: *${reason}*`
+            );
         }
+
+        // =======================
+        // CLEAR
+        // =======================
 
         if (commandName === 'clear') {
-            const jumlah = interaction.options.getInteger('jumlah');
-            if (jumlah < 1 || jumlah > 100) return interaction.reply({ content: "Jumlah pesan harus antara 1-100.", ephemeral: true });
-            await interaction.channel.bulkDelete(jumlah, true);
-            return interaction.reply({ content: `🧹 Berhasil menghapus ${jumlah} pesan!`, ephemeral: true });
+
+            const jumlah =
+                interaction.options.getInteger(
+                    'jumlah'
+                );
+
+            if (
+                jumlah < 1 ||
+                jumlah > 100
+            ) {
+                return interaction.reply({
+                    content:
+                        '❌ Jumlah pesan harus antara 1–100.',
+                    ephemeral: true
+                });
+            }
+
+            await interaction.channel.bulkDelete(
+                jumlah,
+                true
+            );
+
+            return interaction.reply({
+                content:
+                    `🧹 Berhasil menghapus ${jumlah} pesan.`,
+                ephemeral: true
+            });
         }
+
+        // =======================
+        // CLEAR ALL
+        // =======================
 
         if (commandName === 'clearall') {
-            await interaction.channel.bulkDelete(100, true);
-            return interaction.reply({ content: `🧹 Berhasil menghapus 100 pesan sekaligus (Batas maksimal Discord API)!`, ephemeral: true });
+
+            await interaction.channel.bulkDelete(
+                100,
+                true
+            );
+
+            return interaction.reply({
+                content:
+                    '🧹 Berhasil menghapus hingga 100 pesan.',
+                ephemeral: true
+            });
         }
 
-        if (commandName === 'upload') {
-            try {
-                const channel = interaction.options.getChannel('channel');
-                const embed = new EmbedBuilder()
-                    .setColor('#ffffff')
-                    .setTitle(`**${interaction.options.getString('judul')}**`)
-                    .addFields(
-                        { name: 'Command', value: `\`${interaction.options.getString('cmd')}\`` },
-                        { name: 'Deskripsi', value: interaction.options.getString('deskripsi') },
-                        { name: 'Credit', value: interaction.options.getString('credit') },
-                        { name: 'Download', value: `[klik untuk download](${interaction.options.getString('download')})` }
+        // =======================
+        // FITUR 4 — ANNOUNCE
+        // =======================
+
+        if (commandName === 'announce') {
+
+            const channel =
+                interaction.options.getChannel(
+                    'channel'
+                );
+
+            const judul =
+                interaction.options.getString(
+                    'judul'
+                );
+
+            const pesan =
+                interaction.options.getString(
+                    'pesan'
+                );
+
+            const embed =
+                new EmbedBuilder()
+                    .setColor('#00d2ff')
+                    .setTitle(
+                        `📢 ${judul}`
                     )
-                    .setFooter({ text: `@tatang comunity | ${new Date().toLocaleDateString('id-ID')}` });
+                    .setDescription(
+                        pesan
+                    )
+                    .setFooter({
+                        text:
+                            `TAMA COMMUNITY • ${interaction.user.tag}`
+                    })
+                    .setTimestamp();
 
-                const img = interaction.options.getAttachment('gambar');
-                if (img) embed.setImage(img.url);
+            await channel.send({
+                embeds: [embed]
+            });
 
-                await channel.send({ embeds: [embed] });
-                await interaction.reply({ content: `✅ Berhasil dikirim ke ${channel}`, ephemeral: true });
-            } catch (err) {
-                console.error("❌ ERROR Upload:", err);
-                await interaction.reply({ content: "❌ Terjadi error saat upload!", ephemeral: true });
+            return interaction.reply({
+                content:
+                    `✅ Pengumuman berhasil dikirim ke ${channel}.`,
+                ephemeral: true
+            });
+        }
+
+        // =======================
+        // FITUR 5 — ROLE
+        // =======================
+
+        if (commandName === 'role') {
+
+            const subcommand =
+                interaction.options.getSubcommand();
+
+            const target =
+                interaction.options.getMember(
+                    'target'
+                );
+
+            const role =
+                interaction.options.getRole(
+                    'role'
+                );
+
+            if (!target || !role) {
+                return interaction.reply({
+                    content:
+                        '❌ Member atau role tidak ditemukan.',
+                    ephemeral: true
+                });
+            }
+
+            // Cegah role lebih tinggi dari bot
+            const botMember =
+                interaction.guild.members.me;
+
+            if (
+                botMember &&
+                role.position >=
+                    botMember.roles.highest.position
+            ) {
+                return interaction.reply({
+                    content:
+                        '❌ Bot tidak dapat mengelola role tersebut karena posisinya terlalu tinggi.',
+                    ephemeral: true
+                });
+            }
+
+            if (
+                subcommand === 'add'
+            ) {
+
+                await target.roles.add(
+                    role
+                );
+
+                return interaction.reply({
+                    content:
+                        `✅ Role ${role} berhasil diberikan kepada ${target}.`,
+                    ephemeral: true
+                });
+            }
+
+            if (
+                subcommand === 'remove'
+            ) {
+
+                await target.roles.remove(
+                    role
+                );
+
+                return interaction.reply({
+                    content:
+                        `✅ Role ${role} berhasil dihapus dari ${target}.`,
+                    ephemeral: true
+                });
             }
         }
+
+        // =======================
+        // UPLOAD
+        // =======================
+
+        if (commandName === 'upload') {
+
+            try {
+
+                const channel =
+                    interaction.options.getChannel(
+                        'channel'
+                    );
+
+                const embed =
+                    new EmbedBuilder()
+                        .setColor('#ffffff')
+                        .setTitle(
+                            `**${interaction.options.getString('judul')}**`
+                        )
+                        .addFields(
+                            {
+                                name: 'Command',
+                                value:
+                                    `\`${interaction.options.getString('cmd')}\``
+                            },
+                            {
+                                name: 'Deskripsi',
+                                value:
+                                    interaction.options.getString('deskripsi')
+                            },
+                            {
+                                name: 'Credit',
+                                value:
+                                    interaction.options.getString('credit')
+                            },
+                            {
+                                name: 'Download',
+                                value:
+                                    `[klik untuk download](${interaction.options.getString('download')})`
+                            }
+                        )
+                        .setFooter({
+                            text:
+                                `@tatang comunity | ${new Date().toLocaleDateString('id-ID')}`
+                        });
+
+                const img =
+                    interaction.options.getAttachment(
+                        'gambar'
+                    );
+
+                if (img) {
+                    embed.setImage(
+                        img.url
+                    );
+                }
+
+                await channel.send({
+                    embeds: [embed]
+                });
+
+                return interaction.reply({
+                    content:
+                        `✅ Berhasil dikirim ke ${channel}`,
+                    ephemeral: true
+                });
+
+            } catch (err) {
+
+                console.error(
+                    '❌ ERROR Upload:',
+                    err
+                );
+
+                return interaction.reply({
+                    content:
+                        '❌ Terjadi error saat upload!',
+                    ephemeral: true
+                });
+            }
+        }
+
         return;
     }
 
-    // --- PANEL SPAM LOGIC ---
-    if (interaction.isButton()) {
-        if (interaction.customId === 'spam_set_webhook') {
-            const modal = new ModalBuilder().setCustomId('modal_set_webhook').setTitle('Set Target Webhook');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_webhook_url').setLabel('Link Webhook Discord').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_webhook_msg').setLabel('Pesan Spam').setStyle(TextInputStyle.Paragraph).setRequired(true).setValue('WEBHOOK INI TELAH DIHANCURKAN OLEH TATANG COMUNITY ANTI KEYLOGGER!'))
+    // =======================
+    // CHARACTER STORY
+    // =======================
+
+    if (
+        interaction.isButton() &&
+        interaction.customId === 'start_cs'
+    ) {
+
+        const selectMenu =
+            new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId(
+                        'select_server'
+                    )
+                    .setPlaceholder(
+                        'Pilih server tujuan...'
+                    )
+                    .addOptions(
+                        {
+                            label: 'SSRP',
+                            value: 'SSRP'
+                        },
+                        {
+                            label: 'Virtual RP',
+                            value: 'Virtual RP'
+                        },
+                        {
+                            label: 'AARP',
+                            value: 'AARP'
+                        },
+                        {
+                            label: 'GCRP',
+                            value: 'GCRP'
+                        },
+                        {
+                            label: 'TEN ROLEPLAY',
+                            value: 'TEN ROLEPLAY'
+                        },
+                        {
+                            label: 'CPRP',
+                            value: 'CPRP'
+                        },
+                        {
+                            label: 'Relative RP',
+                            value: 'Relative RP'
+                        },
+                        {
+                            label: 'JGRP',
+                            value: 'JGRP'
+                        },
+                        {
+                            label: 'FMRP',
+                            value: 'FMRP'
+                        }
+                    )
             );
-            return interaction.showModal(modal);
-        }
 
-        if (interaction.customId === 'spam_set_tele') {
-            const modal = new ModalBuilder().setCustomId('modal_set_tele').setTitle('Set Target Telegram');
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_token').setLabel('Bot Token Target').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_chatid').setLabel('Chat ID Target').setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_tele_msg').setLabel('Pesan Spam').setStyle(TextInputStyle.Paragraph).setRequired(true).setValue('BOT INI TELAH DIHANCURKAN OLEH TATANG COMUNITY ANTI KEYLOGGER!'))
-            );
-            return interaction.showModal(modal);
-        }
+        return interaction.reply({
+            content:
+                'Pilih server tujuan:',
+            components: [selectMenu],
+            ephemeral: true
+        });
+    }
 
-        if (interaction.customId === 'spam_start') {
-            const config = spamConfigs.get(interaction.user.id);
-            if (!config) return interaction.reply({ content: '⚠️ Belum mengatur target!', ephemeral: true });
-            if (activeSpams.has(interaction.user.id)) return interaction.reply({ content: '⚠️ Spam sudah berjalan!', ephemeral: true });
+    if (
+        interaction.isStringSelectMenu() &&
+        interaction.customId === 'select_server'
+    ) {
 
-            await interaction.reply({ content: '🔥 Spam dimulai! (1 detik interval).', ephemeral: true });
-            const interval = setInterval(async () => {
-                try {
-                    if (config.type === 'webhook') await axios.post(config.url, { content: config.msg });
-                    else if (config.type === 'telegram') await axios.post(`https://api.telegram.org/bot${config.token}/sendMessage`, { chat_id: config.chatId, text: config.msg });
-                } catch (e) {}
-            }, 1000);
-            activeSpams.set(interaction.user.id, interval);
-        }
-
-        if (interaction.customId === 'spam_stop') {
-            const interval = activeSpams.get(interaction.user.id);
-            if (interval) {
-                clearInterval(interval);
-                activeSpams.delete(interaction.user.id);
-                return interaction.reply({ content: '🛑 Spam dihentikan.', ephemeral: true });
+        csSessions.set(
+            interaction.user.id,
+            {
+                server:
+                    interaction.values[0]
             }
-            return interaction.reply({ content: '⚠️ Tidak ada spam berjalan.', ephemeral: true });
-        }
-    }
-
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'modal_set_webhook') {
-            spamConfigs.set(interaction.user.id, { type: 'webhook', url: interaction.fields.getTextInputValue('in_webhook_url'), msg: interaction.fields.getTextInputValue('in_webhook_msg') });
-            return interaction.reply({ content: '✅ Target Webhook disetel!', ephemeral: true });
-        }
-        if (interaction.customId === 'modal_set_tele') {
-            spamConfigs.set(interaction.user.id, { type: 'telegram', token: interaction.fields.getTextInputValue('in_tele_token'), chatId: interaction.fields.getTextInputValue('in_tele_chatid'), msg: interaction.fields.getTextInputValue('in_tele_msg') });
-            return interaction.reply({ content: '✅ Target Telegram disetel!', ephemeral: true });
-        }
-    }
-
-    // --- CS CREATION LOGIC ---
-    if (interaction.isButton() && interaction.customId === 'start_cs') {
-        const selectMenu = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId('select_server').setPlaceholder('Pilih server tujuan...').addOptions([
-                { label: 'SSRP', value: 'SSRP' }, { label: 'Virtual RP', value: 'Virtual RP' }, { label: 'AARP', value: 'AARP' },
-                { label: 'GCRP', value: 'GCRP' }, { label: 'TEN ROLEPLAY', value: 'TEN ROLEPLAY' }, { label: 'CPRP', value: 'CPRP' },
-                { label: 'Relative RP', value: 'Relative RP' }, { label: 'JGRP', value: 'JGRP' }, { label: 'FMRP', value: 'FMRP' }
-            ])
         );
-        return interaction.reply({ content: 'Pilih server karaktermu:', components: [selectMenu], ephemeral: true });
+
+        const buttons =
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(
+                        'side_good'
+                    )
+                    .setLabel(
+                        'Goodside'
+                    )
+                    .setEmoji('😇')
+                    .setStyle(
+                        ButtonStyle.Success
+                    ),
+
+                new ButtonBuilder()
+                    .setCustomId(
+                        'side_bad'
+                    )
+                    .setLabel(
+                        'Badside'
+                    )
+                    .setEmoji('😈')
+                    .setStyle(
+                        ButtonStyle.Danger
+                    )
+            );
+
+        return interaction.reply({
+            content:
+                'Pilih alur karakter:',
+            components: [buttons],
+            ephemeral: true
+        });
     }
 
-    if (interaction.isStringSelectMenu() && interaction.customId === 'select_server') {
-        csSessions.set(interaction.user.id, { server: interaction.values[0] });
-        const buttons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('side_good').setLabel('Goodside').setEmoji('😇').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('side_bad').setLabel('Badside').setEmoji('😈').setStyle(ButtonStyle.Danger)
+    if (
+        interaction.isButton() &&
+        (
+            interaction.customId ===
+                'side_good' ||
+            interaction.customId ===
+                'side_bad'
+        )
+    ) {
+
+        const side =
+            interaction.customId ===
+                'side_good'
+                ? 'Good Side'
+                : 'Bad Side';
+
+        const session =
+            csSessions.get(
+                interaction.user.id
+            ) || {
+                server: 'Unknown'
+            };
+
+        session.side =
+            side;
+
+        csSessions.set(
+            interaction.user.id,
+            session
         );
-        return interaction.reply({ content: 'Pilih alur cerita:', components: [buttons], ephemeral: true });
-    }
 
-    if (interaction.isButton() && (interaction.customId === 'side_good' || interaction.customId === 'side_bad')) {
-        const side = interaction.customId === 'side_good' ? 'Good Side' : 'Bad Side';
-        const session = csSessions.get(interaction.user.id) || { server: 'Unknown' };
-        session.side = side;
-        csSessions.set(interaction.user.id, session);
+        const modal =
+            new ModalBuilder()
+                .setCustomId(
+                    'modal_step_1'
+                )
+                .setTitle(
+                    'Detail Karakter'
+                );
 
-        const modal = new ModalBuilder().setCustomId('modal_step_1').setTitle(`Detail Karakter (1/2)`);
         modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_nama').setLabel('Nama Lengkap (IC)').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_level').setLabel('Level Karakter').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_gender').setLabel('Jenis Kelamin').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_dob').setLabel('Tanggal Lahir').setStyle(TextInputStyle.Short).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_city').setLabel('Kota Asal').setStyle(TextInputStyle.Short).setRequired(true))
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_nama'
+                    )
+                    .setLabel(
+                        'Nama Lengkap (IC)'
+                    )
+                    .setStyle(
+                        TextInputStyle.Short
+                    )
+                    .setRequired(true)
+            ),
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_level'
+                    )
+                    .setLabel(
+                        'Level Karakter'
+                    )
+                    .setStyle(
+                        TextInputStyle.Short
+                    )
+                    .setRequired(true)
+            ),
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_gender'
+                    )
+                    .setLabel(
+                        'Jenis Kelamin'
+                    )
+                    .setStyle(
+                        TextInputStyle.Short
+                    )
+                    .setRequired(true)
+            ),
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_dob'
+                    )
+                    .setLabel(
+                        'Tanggal Lahir'
+                    )
+                    .setStyle(
+                        TextInputStyle.Short
+                    )
+                    .setRequired(true)
+            ),
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_city'
+                    )
+                    .setLabel(
+                        'Kota Asal'
+                    )
+                    .setStyle(
+                        TextInputStyle.Short
+                    )
+                    .setRequired(true)
+            )
         );
-        return interaction.showModal(modal);
+
+        return interaction.showModal(
+            modal
+        );
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === 'modal_step_1') {
-        const session = csSessions.get(interaction.user.id);
-        if (!session) return interaction.reply({ content: 'Sesi habis.', ephemeral: true });
+    if (
+        interaction.isModalSubmit() &&
+        interaction.customId ===
+            'modal_step_1'
+    ) {
+
+        const session =
+            csSessions.get(
+                interaction.user.id
+            );
+
+        if (!session) {
+            return interaction.reply({
+                content:
+                    '❌ Sesi Character Story telah berakhir.',
+                ephemeral: true
+            });
+        }
 
         session.data = {
-            nama: interaction.fields.getTextInputValue('in_nama'),
-            level: interaction.fields.getTextInputValue('in_level'),
-            gender: interaction.fields.getTextInputValue('in_gender'),
-            dob: interaction.fields.getTextInputValue('in_dob'),
-            city: interaction.fields.getTextInputValue('in_city')
+            nama:
+                interaction.fields.getTextInputValue(
+                    'in_nama'
+                ),
+            level:
+                interaction.fields.getTextInputValue(
+                    'in_level'
+                ),
+            gender:
+                interaction.fields.getTextInputValue(
+                    'in_gender'
+                ),
+            dob:
+                interaction.fields.getTextInputValue(
+                    'in_dob'
+                ),
+            city:
+                interaction.fields.getTextInputValue(
+                    'in_city'
+                )
         };
 
-        const button = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('to_step_2').setLabel('Lanjutkan').setStyle(ButtonStyle.Primary));
-        return interaction.reply({ content: '✅ Detail dasar disimpan.', components: [button], ephemeral: true });
+        const button =
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(
+                        'to_step_2'
+                    )
+                    .setLabel(
+                        'Lanjutkan'
+                    )
+                    .setStyle(
+                        ButtonStyle.Primary
+                    )
+            );
+
+        return interaction.reply({
+            content:
+                '✅ Informasi karakter berhasil disimpan.',
+            components: [button],
+            ephemeral: true
+        });
     }
 
-    if (interaction.isButton() && interaction.customId === 'to_step_2') {
-        const session = csSessions.get(interaction.user.id);
-        if (!session) return interaction.reply({ content: 'Sesi habis.', ephemeral: true });
+    if (
+        interaction.isButton() &&
+        interaction.customId ===
+            'to_step_2'
+    ) {
 
-        const modal = new ModalBuilder().setCustomId('modal_step_2').setTitle(`Detail Cerita (2/2)`);
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_bakat').setLabel('Bakat Dominan').setStyle(TextInputStyle.Paragraph).setRequired(true)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_kultur').setLabel('Kultur/Etnis').setStyle(TextInputStyle.Short).setRequired(false)),
-            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('in_ekstra').setLabel('Detail Tambahan').setStyle(TextInputStyle.Paragraph).setRequired(false))
-        );
-        return interaction.showModal(modal);
-    }
+        const session =
+            csSessions.get(
+                interaction.user.id
+            );
 
-    if (interaction.isModalSubmit() && interaction.customId === 'modal_step_2') {
-        await interaction.deferReply(); 
-        const session = csSessions.get(interaction.user.id);
-        
-        try {
-            const promptContext = `Tuliskan Character Story GTA Roleplay untuk karakter bernama ${session.data.nama} (Gender: ${session.data.gender}). Lahir: ${session.data.dob}, Kota: ${session.data.city}. Sisi Cerita: ${session.side}, Bakat: ${interaction.fields.getTextInputValue('in_bakat')}. Buat 3 paragraf bahasa Indonesia formal naratif.`;
-
-            const chatCompletion = await groq.chat.completions.create({
-                messages: [{ role: 'user', content: promptContext }],
-                model: 'llama-3.3-70b-versatile',
-                temperature: 0.7
+        if (!session) {
+            return interaction.reply({
+                content:
+                    '❌ Sesi telah berakhir.',
+                ephemeral: true
             });
-
-            const story = chatCompletion.choices[0].message.content;
-
-            const finalEmbed = new EmbedBuilder()
-                .setColor(session.side === 'Good Side' ? '#2ecc71' : '#e74c3c')
-                .setTitle(`📄 Character Story: ${session.data.nama}`)
-                .setDescription(story.substring(0, 4000))
-                .addFields(
-                    { name: '🌐 Server', value: session.server, inline: true },
-                    { name: '🎭 Sisi Cerita', value: session.side, inline: true },
-                    { name: '📈 Level', value: session.data.level, inline: true }
-                )
-                .setFooter({ text: 'Created By TATANG COMUNITY' }); 
-
-            // TAG USER YANG BERHASIL MEMBUAT CS
-            await interaction.editReply({ content: `🎉 <@${interaction.user.id}> Yeay! Character Story berhasil dibuat!`, embeds: [finalEmbed] });
-            csSessions.delete(interaction.user.id);
-        } catch (error) {
-            await interaction.editReply({ content: '❌ Gagal membuat cerita karena server AI sibuk.' });
         }
+
+        const modal =
+            new ModalBuilder()
+                .setCustomId(
+                    'modal_step_2'
+                )
+                .setTitle(
+                    'Detail Cerita'
+                );
+
+        modal.addComponents(
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_bakat'
+                    )
+                    .setLabel(
+                        'Bakat Dominan'
+                    )
+                    .setStyle(
+                        TextInputStyle.Paragraph
+                    )
+                    .setRequired(true)
+            ),
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_kultur'
+                    )
+                    .setLabel(
+                        'Kultur / Latar'
+                    )
+                    .setStyle(
+                        TextInputStyle.Short
+                    )
+                    .setRequired(false)
+            ),
+
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId(
+                        'in_ekstra'
+                    )
+                    .setLabel(
+                        'Detail Tambahan'
+                    )
+                    .setStyle(
+                        TextInputStyle.Paragraph
+                    )
+                    .setRequired(false)
+            )
+        );
+
+        return interaction.showModal(
+            modal
+        );
+    }
+
+    if (
+        interaction.isModalSubmit() &&
+        interaction.customId ===
+            'modal_step_2'
+    ) {
+
+        const session =
+            csSessions.get(
+                interaction.user.id
+            );
+
+        if (!session) {
+            return interaction.reply({
+                content:
+                    '❌ Sesi Character Story telah berakhir.',
+                ephemeral: true
+            });
+        }
+
+        const bakat =
+            interaction.fields.getTextInputValue(
+                'in_bakat'
+            );
+
+        const kultur =
+            interaction.fields.getTextInputValue(
+                'in_kultur'
+            ) ||
+            'Tidak disebutkan';
+
+        const ekstra =
+            interaction.fields.getTextInputValue(
+                'in_ekstra'
+            ) ||
+            'Tidak ada';
+
+        const data =
+            session.data;
+
+        const story =
+            `**${data.nama}** adalah seorang ${data.gender.toLowerCase()} ` +
+            `yang lahir pada ${data.dob} di ${data.city}. ` +
+            `Ia memiliki bakat dominan berupa ${bakat} dan memilih jalan ${session.side}. ` +
+            `Dengan level ${data.level}, ia mulai membangun kehidupannya di dunia ${session.server}.\n\n` +
+
+            `Latar belakang ${kultur} membentuk kepribadian dan cara berpikirnya. ` +
+            `${data.nama} berusaha menghadapi berbagai tantangan serta membangun hubungan ` +
+            `dengan orang-orang di sekitarnya. Detail tambahan: ${ekstra}.\n\n` +
+
+            `Di dunia roleplay, ${data.nama} akan menjalani kehidupan sesuai dengan ` +
+            `latar belakang dan pilihan yang telah dibuat. Setiap keputusan akan membentuk ` +
+            `perjalanan karakter tersebut.`;
+
+        const finalEmbed =
+            new EmbedBuilder()
+                .setColor(
+                    session.side ===
+                        'Good Side'
+                        ? '#2ecc71'
+                        : '#e74c3c'
+                )
+                .setTitle(
+                    `📄 Character Story: ${data.nama}`
+                )
+                .setDescription(
+                    story.substring(
+                        0,
+                        4000
+                    )
+                )
+                .addFields(
+                    {
+                        name: '🌐 Server',
+                        value:
+                            session.server,
+                        inline: true
+                    },
+                    {
+                        name: '🎭 Sisi',
+                        value:
+                            session.side,
+                        inline: true
+                    },
+                    {
+                        name: '📈 Level',
+                        value:
+                            data.level,
+                        inline: true
+                    }
+                )
+                .setFooter({
+                    text:
+                        'Created by TAMA COMMUNITY'
+                })
+                .setTimestamp();
+
+        await interaction.reply({
+            content:
+                `🎉 <@${interaction.user.id}> Character Story berhasil dibuat!`,
+            embeds: [finalEmbed]
+        });
+
+        csSessions.delete(
+            interaction.user.id
+        );
     }
 });
+
+// =======================
+// 🔌 LOGIN
+// =======================
 
 client.login(TOKEN);
