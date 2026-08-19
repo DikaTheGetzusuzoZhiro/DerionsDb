@@ -1,16 +1,23 @@
 {
-  "name": "tatang-comunity-bot",
+  "name": "tama-community-bot",
   "version": "1.0.0",
-  "description": "Discord Bot Anti Keylogger, AI, Spam, and CS Maker",
+  "description": "Bot Discord untuk keamanan server, anti link, scanner keylogger, dan panel spam.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "keywords": [
+    "discord-bot",
+    "security",
+    "anti-link",
+    "keylogger-scanner"
+  ],
+  "author": "Tama Community",
+  "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.8",
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5",
-    "groq-sdk": "^0.3.2"
+    "axios": "^1.7.7",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
   },
   "engines": {
     "node": ">=18.0.0"
