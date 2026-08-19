@@ -7,7 +7,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -49,7 +48,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 const scannerChannelId = "1492337144021385336";
 const welcomeChannelId = "1464775422913941568";
 const staffRoleId = "1466470849266848009";
-const autoRoleId = "1464778755372486717"; // Role otomatis saat join
+const autoRoleId = "1464778755372486717";
 
 const allowedExtensions = [".lua", ".txt", ".zip", ".7z"];
 
@@ -73,10 +72,10 @@ const detectionPatterns = [
 const spamConfigs = new Map();
 const activeSpams = new Map();
 const welcomeConfigs = new Map();
-const userWarnings = new Map(); // Untuk anti link Discord
+const userWarnings = new Map();
 
 // =======================
-// 🛡️ ANTI LINK DISCORD (OTOMATIS)
+// 🛡️ ANTI LINK DISCORD
 // =======================
 const discordLinkRegex = /https?:\/\/(?:www\.)?(?:discord(?:app)?\.com|discord\.gg)\/[^\s]+/gi;
 
@@ -274,11 +273,11 @@ client.once('ready', async () => {
 });
 
 // =======================
-// 👋 EVENT: MEMBER JOIN (WELCOME + AUTO ROLE)
+// 👋 EVENT: MEMBER JOIN
 // =======================
 
 client.on('guildMemberAdd', async (member) => {
-  // 1. Berikan role otomatis
+  // Auto-role
   try {
     const role = member.guild.roles.cache.get(autoRoleId);
     if (role) {
@@ -291,7 +290,7 @@ client.on('guildMemberAdd', async (member) => {
     console.error(`❌ Gagal memberikan auto-role ke ${member.user.tag}:`, err);
   }
 
-  // 2. Kirim pesan welcome (jika diaktifkan)
+  // Welcome
   const config = welcomeConfigs.get(member.guild.id);
   if (config && config.enabled === false) return;
 
@@ -317,7 +316,7 @@ client.on('guildMemberAdd', async (member) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // ANTI LINK DISCORD OTOMATIS
+  // Anti Link Discord
   if (discordLinkRegex.test(message.content)) {
     await handleDiscordLinkViolation(message);
     return;
@@ -328,7 +327,7 @@ client.on("messageCreate", async (message) => {
   if (content === "!help") return message.reply(payloads.help());
   if (content === "!panelspam") return message.channel.send(payloads.panelspam());
 
-  // SCANNER CHANNEL
+  // Scanner channel
   if (message.channel.id === scannerChannelId && message.attachments.size > 0) {
     const attachment = message.attachments.first();
     const fileName = attachment.name.toLowerCase();
@@ -389,7 +388,7 @@ client.on('interactionCreate', async (interaction) => {
     if (commandName === 'panelspam') return interaction.reply(payloads.panelspam());
     if (commandName === 'status') return interaction.reply(payloads.status(client));
 
-    // MODERATION COMMANDS (khusus staff)
+    // Moderasi (hanya staff)
     if (['welcome', 'ban', 'kick', 'timeout', 'clear', 'clearall', 'upload'].includes(commandName) && !isStaff) {
       return interaction.reply({ content: '❌ Akses Ditolak! Kamu tidak memiliki role khusus (Staff).', ephemeral: true });
     }
@@ -463,7 +462,7 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // --- PANEL SPAM LOGIC ---
+  // Panel Spam (Button & Modal)
   if (interaction.isButton()) {
     if (interaction.customId === 'spam_set_webhook') {
       const modal = new ModalBuilder()
